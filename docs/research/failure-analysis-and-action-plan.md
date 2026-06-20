@@ -172,3 +172,26 @@ The pattern confirms the diagnosis: on LoCoMo the gate is **getting the right fa
 into the candidate set the reranker scores**. opinionated already includes all stable
 facts + links + wide semantic recall, so chunked extraction (more facts in the store)
 converts directly. maxxed/simple needed their retrieval/selection widened first.
+
+## maxxed coverage levers FLOOD the pipeline (iter-1/iter-2 — measured negatives)
+
+maxxed is the playground; we pushed coverage hard and it backfired, twice:
+
+| maxxed iter | lever | LoCoMo | recall cat | tok/recall p50 |
+|---|---|---|---|---|
+| baseline (anchored) | — | 23% | 48% | 999 |
+| iter-1 | exhaustive extraction | 22% (flat) | 39% | 1003 |
+| iter-2 | chunked extraction + RETRIEVE_K 20→50 | **12%** (−11) | 16% | **0** |
+
+**Root cause:** maxxed's recall is a multi-step pipeline (rewrite → hybrid+RRF →
+graph-expand → LLM rerank → abstention gate → assemble → LLM compact). Flooding it
+with candidates spreads the rerank scores thin, so **nothing clears the abstention
+floor and recall returns EMPTY** (tok/recall p50 → 0 on iter-2). Its separate
+rerank+compact steps don't scale with candidate volume — the exact opposite of
+opinionated, whose single rerank-and-write absorbs more candidates gracefully.
+
+**Lesson:** "coverage helps builds with a reranker" is too coarse — it needs a
+reranker that *triages a large set in one pass*. maxxed's staged pipeline doesn't.
+Both coverage levers were **reverted**. iter-3 pivots to **precision**: a temporal
+date-boost so dated facts (its worst category, temporal 5%) rank into the budget —
+no change to candidate volume.
