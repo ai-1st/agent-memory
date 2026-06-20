@@ -54,16 +54,17 @@ ensure_up() { # name dir port env...
 }
 
 echo "model=$MODEL judge=${SUITE_JUDGE_MODEL:-claude-opus-4-8}  N: lme=$LME_N ruler=$RULER_N(hay=$RULER_HAY) locomo=$LOCOMO_N"
-ensure_up opinionated "$REPO/implementations/opinionated" 8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
+ensure_up opinionated "$REPO/implementations/opinionated" 8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_MULTI_QUERY="${MEMORY_MULTI_QUERY:-}" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
 ensure_up simple      "$REPO/implementations/simple"      8092 MEMORY_DATA_DIR="$DATA/simple" MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/simple-llm.csv"
 ensure_up maxxed      "$REPO/implementations/maxxed"      8093 MEMORY_DB_DIR="$DATA/maxxed" MEMORY_PIPELINE=llm MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/maxxed-llm.csv"
 
 run() { # impl port adapter limit [haystack]
   local impl="$1" url="http://localhost:$2" adapter="$3" limit="$4" hay="${5:-50}"
-  echo "[$impl] START $adapter (N=$limit)"
-  RULER_HAYSTACK="$hay" npx tsx bench/suite/run.ts --adapter "$adapter" --url "$url" --label "${impl}-haiku" --limit "$limit" \
+  local label="${impl}-haiku${LABEL_SUFFIX:-}"
+  echo "[$impl] START $adapter (N=$limit) label=$label"
+  RULER_HAYSTACK="$hay" npx tsx bench/suite/run.ts --adapter "$adapter" --url "$url" --label "$label" --limit "$limit" \
     >"/tmp/hardening-$impl-$adapter.log" 2>&1 || echo "[$impl] $adapter FAILED"
-  local card="bench/results/suite/${adapter}__${impl}-haiku.json"
+  local card="bench/results/suite/${adapter}__${label}.json"
   local acc; acc=$(grep -m1 '"accuracy"' "$card" 2>/dev/null | tr -d ' ,' || true)
   local us;  us=$(grep -m1 '"est_usd"' "$card" 2>/dev/null | tr -d ' ,' || true)
   echo "[$impl] DONE $adapter -> ${acc:-no-card} ${us:-}"
@@ -83,10 +84,12 @@ seq_build() { # impl port
   done
 }
 
+# Which builds to run (override with IMPLS env, space-separated). Default all 3.
+# Portable port lookup (macOS ships bash 3.2 — no associative arrays).
+IMPLS="${IMPLS:-opinionated simple maxxed}"
+port_of() { case "$1" in opinionated) echo 8091;; simple) echo 8092;; maxxed) echo 8093;; *) echo 0;; esac; }
 seqs=()
-seq_build opinionated 8091 & seqs+=("$!")
-seq_build simple      8092 & seqs+=("$!")
-seq_build maxxed      8093 & seqs+=("$!")
+for impl in $IMPLS; do seq_build "$impl" "$(port_of "$impl")" & seqs+=("$!"); done
 wait "${seqs[@]}"
 
 echo "=== HARDENING DONE ==="
