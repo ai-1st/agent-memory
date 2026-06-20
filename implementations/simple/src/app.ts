@@ -93,7 +93,7 @@ export async function createApp(
     const text = turnText(messages);
     let turnEmbedding: number[] | null = null;
     try {
-      turnEmbedding = await provider.embed(text);
+      turnEmbedding = await provider.embed(text, "embed_turn");
     } catch (err) {
       console.warn("turn embed failed (continuing):", err);
     }
@@ -115,7 +115,7 @@ export async function createApp(
       for (const em of extracted) {
         let memEmbedding: number[] | null = null;
         try {
-          memEmbedding = await provider.embed(`${em.key} ${em.value}`);
+          memEmbedding = await provider.embed(`${em.key} ${em.value}`, "embed_memory");
         } catch {
           memEmbedding = null;
         }
@@ -165,7 +165,7 @@ export async function createApp(
     }
     const req = parsed.data;
     const qset = tokenSet(req.query);
-    const queryEmbedding = await provider.embed(req.query);
+    const queryEmbedding = await provider.embed(req.query, "embed_query");
     const results = await store.search(
       req.query,
       queryEmbedding,

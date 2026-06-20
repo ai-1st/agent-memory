@@ -13,6 +13,7 @@ services:
       MEMORY_DATA_DIR: /data/pg
       # "live" uses real Anthropic + OpenAI. The eval harness supplies the keys.
       MEMORY_LLM: ${MEMORY_LLM:-live}
+      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-claude-opus-4-8}
       MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

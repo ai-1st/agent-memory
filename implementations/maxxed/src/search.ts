@@ -24,7 +24,7 @@ export async function search(
 
   let embedding: number[] | null = null;
   try {
-    embedding = await llm.embed(query);
+    embedding = await llm.embed(query, "embed_query");
   } catch {
     embedding = null;
   }

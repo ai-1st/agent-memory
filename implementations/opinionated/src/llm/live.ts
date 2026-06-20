@@ -14,7 +14,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { embedMany, generateObject } from "ai";
 import type { z } from "zod";
 import type { Settings } from "../config";
-import { recordEmbedding, recordLlm } from "../metrics";
+import { logInference, recordEmbedding, recordLlm } from "../metrics";
 import type { LLMProvider } from "./provider";
 
 export function createLiveProvider(settings: Settings): LLMProvider {
@@ -52,10 +52,22 @@ export function createLiveProvider(settings: Settings): LLMProvider {
   return {
     name: "live",
 
-    async embed(texts: string[]): Promise<number[][]> {
+    async embed(texts: string[], phase?: string): Promise<number[][]> {
       if (texts.length === 0) return [];
+      const t0 = Date.now();
       const { embeddings, usage } = await embedMany({ model: embeddingModel, values: texts });
+      const latencyMs = Date.now() - t0;
       recordEmbedding(usage?.tokens);
+      logInference({
+        kind: "embedding",
+        phase: phase ?? "embed",
+        model: settings.embeddingModel,
+        inputTokens: usage?.tokens,
+        outputTokens: 0,
+        latencyMs,
+        request: texts.join("\n"),
+        response: "[3072-dim vector]",
+      });
       return embeddings;
     },
 
@@ -68,13 +80,25 @@ export function createLiveProvider(settings: Settings): LLMProvider {
       // NOTE: claude-opus-4-8 removed the `temperature` sampling parameter
       // (sending it returns a 400). Determinism is steered via the prompts
       // (low-ambiguity instructions) and structured-output schemas instead.
+      const t0 = Date.now();
       const { object, usage } = await generateObject({
         model: chatModel,
         schema: args.schema,
         system: args.system,
         prompt: args.prompt,
       });
+      const latencyMs = Date.now() - t0;
       recordLlm(usage?.promptTokens, usage?.completionTokens);
+      logInference({
+        kind: "llm",
+        phase: args.task,
+        model: settings.llmModel,
+        inputTokens: usage?.promptTokens,
+        outputTokens: usage?.completionTokens,
+        latencyMs,
+        request: args.prompt,
+        response: JSON.stringify(object),
+      });
       return object;
     },
   };

@@ -137,7 +137,10 @@ export class Extractor {
     if (candidates.length === 0) return [];
 
     // Embed all candidate values in one batch (one network round-trip).
-    const embeddings = await this.llm.embedMany(candidates.map((c) => `${c.key}: ${c.value}`));
+    const embeddings = await this.llm.embedMany(
+      candidates.map((c) => `${c.key}: ${c.value}`),
+      "embed_memory",
+    );
 
     const applied: AppliedMemory[] = [];
     for (let i = 0; i < candidates.length; i++) {

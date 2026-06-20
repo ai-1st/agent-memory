@@ -24,12 +24,22 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { embed, embedMany, generateObject } from "ai";
 import { z } from "zod";
 import type { Settings } from "./config";
+import { logInference } from "./llmlog";
 import { recordEmbedding, recordLlm } from "./metrics";
 import type { Message } from "./models";
 
 // 3072 is the native width of text-embedding-3-large. The mock matches it so the
 // pglite `vector(N)` column width is identical on both paths.
 export const EMBED_DIM = 3072;
+
+// Model ids, declared once so the metrics counters, the CSV audit log and the
+// actual SDK calls can never drift apart.
+const LLM_MODEL = process.env.MEMORY_LLM_MODEL ?? "claude-opus-4-8";
+const EMBED_MODEL = "text-embedding-3-large";
+
+// Placeholder written to the CSV `response` column for embeddings: we never log
+// the raw 3072-dim vector (huge, useless), just a marker that one was produced.
+const EMBED_RESPONSE = `[${EMBED_DIM}-dim vector]`;
 
 /** The memory categories we extract. Mirrors the contract's `type` field. */
 export const MEMORY_TYPES = ["fact", "preference", "opinion", "event"] as const;
@@ -76,8 +86,9 @@ const extractionSchema = z.object({
 export interface Provider {
   readonly name: string;
   extract(messages: Message[]): Promise<ExtractedMemory[]>;
-  embed(text: string): Promise<number[]>;
-  embedBatch(texts: string[]): Promise<number[][]>;
+  /** `phase` is the CSV audit call-site label (embed_query, embed_memory, ...). */
+  embed(text: string, phase?: string): Promise<number[]>;
+  embedBatch(texts: string[], phase?: string): Promise<number[][]>;
   /** Tidy `context` to fit ~maxTokens. May return the input unchanged. */
   compact(context: string, query: string, maxTokens: number): Promise<string>;
 }
@@ -136,44 +147,93 @@ export class LiveProvider implements Provider {
       .join("\n");
     if (!transcript.trim()) return [];
 
+    const prompt = `Conversation turn:\n${transcript}`;
+    const started = Date.now();
     const { object, usage } = await generateObject({
-      model: this.anthropic("claude-opus-4-8"),
+      model: this.anthropic(LLM_MODEL),
       schema: extractionSchema,
       system: EXTRACTION_SYSTEM,
-      prompt: `Conversation turn:\n${transcript}`,
+      prompt,
     });
-    recordLlm(usage);
+    const { input, output } = recordLlm(usage);
+    logInference({
+      kind: "llm",
+      phase: "extract",
+      model: LLM_MODEL,
+      inputTokens: input,
+      outputTokens: output,
+      latencyMs: Date.now() - started,
+      request: `${EXTRACTION_SYSTEM}\n\n${prompt}`,
+      response: JSON.stringify(object),
+    });
     return object.memories.map((m) => ({ ...m, snippet: transcript.slice(0, 280) }));
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, phase = "embed"): Promise<number[]> {
+    const started = Date.now();
     const { embedding, usage } = await embed({
-      model: this.openai.textEmbeddingModel("text-embedding-3-large"),
+      model: this.openai.textEmbeddingModel(EMBED_MODEL),
       value: text || " ",
     });
-    recordEmbedding(usage?.tokens);
+    const tokens = recordEmbedding(usage?.tokens);
+    logInference({
+      kind: "embedding",
+      phase,
+      model: EMBED_MODEL,
+      inputTokens: tokens,
+      outputTokens: undefined,
+      latencyMs: Date.now() - started,
+      request: text,
+      response: EMBED_RESPONSE,
+    });
     return embedding;
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], phase = "embed_batch"): Promise<number[][]> {
     if (texts.length === 0) return [];
+    const started = Date.now();
     const { embeddings, usage } = await embedMany({
-      model: this.openai.textEmbeddingModel("text-embedding-3-large"),
+      model: this.openai.textEmbeddingModel(EMBED_MODEL),
       values: texts.map((t) => t || " "),
     });
-    recordEmbedding(usage?.tokens);
+    const tokens = recordEmbedding(usage?.tokens);
+    // One row per batch call (batch tokens are billed/reported as a whole). The
+    // request column carries the batched texts so the audit stays self-contained.
+    logInference({
+      kind: "embedding",
+      phase,
+      model: EMBED_MODEL,
+      inputTokens: tokens,
+      outputTokens: undefined,
+      latencyMs: Date.now() - started,
+      request: texts.join("\n---\n"),
+      response: `${embeddings.length}x ${EMBED_RESPONSE}`,
+    });
     return embeddings;
   }
 
   async compact(context: string, query: string, maxTokens: number): Promise<string> {
+    const system =
+      "You compress an agent's memory context so it fits a token budget. Keep the markdown headers and the highest-value facts for answering the query. Drop low-value lines. Never invent facts. Preserve dates and supersession notes.";
+    const prompt = `Query: ${query}\nBudget: ~${maxTokens} tokens.\n\nContext to compress:\n${context}`;
+    const started = Date.now();
     const { object, usage } = await generateObject({
-      model: this.anthropic("claude-opus-4-8"),
+      model: this.anthropic(LLM_MODEL),
       schema: z.object({ context: z.string() }),
-      system:
-        "You compress an agent's memory context so it fits a token budget. Keep the markdown headers and the highest-value facts for answering the query. Drop low-value lines. Never invent facts. Preserve dates and supersession notes.",
-      prompt: `Query: ${query}\nBudget: ~${maxTokens} tokens.\n\nContext to compress:\n${context}`,
+      system,
+      prompt,
     });
-    recordLlm(usage);
+    const { input, output } = recordLlm(usage);
+    logInference({
+      kind: "llm",
+      phase: "compaction",
+      model: LLM_MODEL,
+      inputTokens: input,
+      outputTokens: output,
+      latencyMs: Date.now() - started,
+      request: `${system}\n\n${prompt}`,
+      response: object.context,
+    });
     return object.context;
   }
 }
@@ -322,6 +382,10 @@ export class MockProvider implements Provider {
     // Offline: no tokens are actually spent. Record the call with zero usage so
     // the /metrics call counters still tick (the harness/tests can observe a
     // turn happened) without inventing token spend.
+    const started = Date.now();
+    const transcript = messages
+      .map((m) => `${m.role}${m.name ? `(${m.name})` : ""}: ${m.content}`)
+      .join("\n");
     recordLlm();
     const out: ExtractedMemory[] = [];
     const seen = new Set<string>();
@@ -347,27 +411,74 @@ export class MockProvider implements Provider {
         }
       }
     }
+    logInference({
+      kind: "llm",
+      phase: "extract",
+      model: this.name,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - started,
+      request: transcript,
+      response: JSON.stringify({ memories: out.map(({ snippet: _s, ...m }) => m) }),
+    });
     return out;
   }
 
-  async embed(text: string): Promise<number[]> {
+  async embed(text: string, phase = "embed"): Promise<number[]> {
+    const started = Date.now();
     recordEmbedding();
-    return hashEmbed(text);
+    const v = hashEmbed(text);
+    logInference({
+      kind: "embedding",
+      phase,
+      model: this.name,
+      inputTokens: 0,
+      outputTokens: undefined,
+      latencyMs: Date.now() - started,
+      request: text,
+      response: EMBED_RESPONSE,
+    });
+    return v;
   }
 
-  async embedBatch(texts: string[]): Promise<number[][]> {
+  async embedBatch(texts: string[], phase = "embed_batch"): Promise<number[][]> {
+    const started = Date.now();
     recordEmbedding();
-    return texts.map(hashEmbed);
+    const v = texts.map(hashEmbed);
+    logInference({
+      kind: "embedding",
+      phase,
+      model: this.name,
+      inputTokens: 0,
+      outputTokens: undefined,
+      latencyMs: Date.now() - started,
+      request: texts.join("\n---\n"),
+      response: `${v.length}x ${EMBED_RESPONSE}`,
+    });
+    return v;
   }
 
-  async compact(context: string, _query: string, maxTokens: number): Promise<string> {
+  async compact(context: string, query: string, maxTokens: number): Promise<string> {
+    const started = Date.now();
     recordLlm();
     // Deterministic offline compaction: drop trailing lines until it fits.
     const budgetChars = maxTokens * 4;
-    if (context.length <= budgetChars) return context;
     const lines = context.split("\n");
-    while (lines.length > 1 && lines.join("\n").length > budgetChars) lines.pop();
-    return lines.join("\n");
+    if (context.length > budgetChars) {
+      while (lines.length > 1 && lines.join("\n").length > budgetChars) lines.pop();
+    }
+    const result = lines.join("\n");
+    logInference({
+      kind: "llm",
+      phase: "compaction",
+      model: this.name,
+      inputTokens: 0,
+      outputTokens: 0,
+      latencyMs: Date.now() - started,
+      request: `Query: ${query}\nBudget: ~${maxTokens} tokens.\n\nContext to compress:\n${context}`,
+      response: result,
+    });
+    return result;
   }
 }
 

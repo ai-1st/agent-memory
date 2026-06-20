@@ -12,8 +12,12 @@ import type { z } from "zod";
 
 export interface LLMProvider {
   readonly name: string;
-  /** Embed a batch of texts. Returned vectors share a fixed dimension. */
-  embed(texts: string[]): Promise<number[][]>;
+  /**
+   * Embed a batch of texts. Returned vectors share a fixed dimension.
+   * `phase` is an optional best-effort call-site label (e.g. embed_query,
+   * embed_memory) used only for the cost-audit CSV log.
+   */
+  embed(texts: string[], phase?: string): Promise<number[][]>;
   /**
    * Structured generation: prompt -> object validated against `schema`.
    * Resolves to the schema's OUTPUT type (defaults applied), not its input.

@@ -68,7 +68,7 @@ export class RecallPipeline {
 
     if (query.trim()) {
       try {
-        const [qEmb] = await this.llm.embed([query]);
+        const [qEmb] = await this.llm.embed([query], "embed_query");
         if (qEmb) {
           const sims = await this.store.similarMemories({
             userId,

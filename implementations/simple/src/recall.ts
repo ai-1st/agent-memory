@@ -69,7 +69,7 @@ export class Recaller {
     const kw = (text: string): number => keywordOverlap(qset, text);
 
     // Semantic scores for all active memories (one embed + one SQL round-trip).
-    const queryEmbedding = await this.provider.embed(query);
+    const queryEmbedding = await this.provider.embed(query, "embed_query");
     const scored: ScoredMemory[] = userId
       ? await this.store.semanticMemories(userId, queryEmbedding)
       : [];
@@ -92,7 +92,10 @@ export class Recaller {
 
     // Recent conversation turns, scored the same way (semantic + keyword).
     const turns = await this.store.recentTurns({ sessionId, userId, limit: 50 });
-    const turnEmbeds = await this.provider.embedBatch(turns.map((t) => t.text));
+    const turnEmbeds = await this.provider.embedBatch(
+      turns.map((t) => t.text),
+      "embed_recent_turns",
+    );
     const scoredTurns = turns
       .map((t, i) => {
         const semantic = cosine(queryEmbedding, turnEmbeds[i]);

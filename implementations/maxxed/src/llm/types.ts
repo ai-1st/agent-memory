@@ -22,8 +22,13 @@ export interface LlmClient {
   /** Whether this client can reach a real model (false for the mock). */
   readonly live: boolean;
 
-  embed(text: string): Promise<number[]>;
-  embedMany(texts: string[]): Promise<number[][]>;
+  /**
+   * Embed one text. `phase` is a free-form call-site label used only for the
+   * per-call cost audit log (e.g. "embed_query", "embed_memory"); it never
+   * affects the embedding itself and defaults to a generic label.
+   */
+  embed(text: string, phase?: string): Promise<number[]>;
+  embedMany(texts: string[], phase?: string): Promise<number[][]>;
 
   /**
    * Structured generation constrained to a Zod schema.

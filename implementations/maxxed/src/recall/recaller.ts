@@ -260,7 +260,7 @@ export class HybridRecaller implements Recaller {
 
   private async embedQueries(queries: string[]): Promise<Array<number[] | null>> {
     try {
-      return await this.llm.embedMany(queries);
+      return await this.llm.embedMany(queries, "embed_query");
     } catch {
       return queries.map(() => null);
     }

@@ -90,7 +90,7 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       .trim();
     let turnEmbedding: number[] | null = null;
     try {
-      turnEmbedding = await llm.embed(turnText);
+      turnEmbedding = await llm.embed(turnText, "embed_turn");
     } catch (err) {
       console.warn("turn embed failed:", (err as Error).message);
     }

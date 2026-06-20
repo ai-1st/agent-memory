@@ -79,7 +79,10 @@ export class IngestPipeline {
     if (facts.length === 0) return { extracted: 0, operations: [] };
 
     // Stage 3a/3b: per-fact, in parallel — embed, search, reconcile.
-    const embeddings = await this.llm.embed(facts.map((f) => `${f.key}: ${f.value}`));
+    const embeddings = await this.llm.embed(
+      facts.map((f) => `${f.key}: ${f.value}`),
+      "embed_memory",
+    );
     const planned: PlannedFact[] = await Promise.all(
       facts.map(async (fact, i) => {
         const embedding = embeddings[i] ?? [];
@@ -179,7 +182,7 @@ export class IngestPipeline {
     // Re-embed only if the stored value differs from the extracted phrasing.
     let embedding = p.embedding;
     if (value !== p.fact.value) {
-      const [emb] = await this.llm.embed([`${key}: ${value}`]);
+      const [emb] = await this.llm.embed([`${key}: ${value}`], "embed_memory");
       embedding = emb ?? p.embedding;
     }
     return this.store.insertMemory({

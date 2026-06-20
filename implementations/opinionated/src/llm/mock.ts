@@ -19,7 +19,7 @@
  */
 
 import type { z } from "zod";
-import { recordEmbedding, recordLlm } from "../metrics";
+import { logInference, recordEmbedding, recordLlm } from "../metrics";
 import type { extractionSchema, recallPlanSchema, reconcileSchema } from "../pipeline/schemas";
 import type { LLMProvider } from "./provider";
 
@@ -530,8 +530,20 @@ export function createMockProvider(): LLMProvider {
   return {
     name: "mock",
 
-    async embed(texts: string[]): Promise<number[][]> {
-      recordEmbedding(texts.reduce((acc, t) => acc + synthTokens(t), 0));
+    async embed(texts: string[], phase?: string): Promise<number[][]> {
+      const t0 = Date.now();
+      const tokenCount = texts.reduce((acc, t) => acc + synthTokens(t), 0);
+      recordEmbedding(tokenCount);
+      logInference({
+        kind: "embedding",
+        phase: phase ?? "embed",
+        model: "mock-embedding",
+        inputTokens: tokenCount,
+        outputTokens: 0,
+        latencyMs: Date.now() - t0,
+        request: texts.join("\n"),
+        response: "[256-dim vector]",
+      });
       return texts.map((t) => embedOne(t));
     },
 
@@ -541,6 +553,7 @@ export function createMockProvider(): LLMProvider {
       prompt: string;
       task: string;
     }): Promise<z.infer<S>> {
+      const t0 = Date.now();
       let obj: unknown;
       switch (args.task) {
         case "extract": {
@@ -560,7 +573,19 @@ export function createMockProvider(): LLMProvider {
           obj = {};
       }
       const parsed = args.schema.parse(obj);
-      recordLlm(synthTokens(`${args.system}\n${args.prompt}`), synthTokens(JSON.stringify(parsed)));
+      const inputTokens = synthTokens(`${args.system}\n${args.prompt}`);
+      const outputTokens = synthTokens(JSON.stringify(parsed));
+      recordLlm(inputTokens, outputTokens);
+      logInference({
+        kind: "llm",
+        phase: args.task,
+        model: "mock-llm",
+        inputTokens,
+        outputTokens,
+        latencyMs: Date.now() - t0,
+        request: args.prompt,
+        response: JSON.stringify(parsed),
+      });
       return parsed;
     },
   };

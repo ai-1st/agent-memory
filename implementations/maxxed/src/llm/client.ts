@@ -28,6 +28,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { type LanguageModel, type RepairTextFunction, embed, embedMany, generateObject } from "ai";
 import type { z } from "zod";
 import type { Settings } from "../config";
+import { logCall } from "./csvlog";
 import { recordEmbeddingUsage, recordLlmUsage } from "./metrics";
 import type { LlmClient } from "./types";
 
@@ -92,6 +93,8 @@ export class AiSdkClient implements LlmClient {
 
   private model: LanguageModel;
   private embedder: ReturnType<ReturnType<typeof createOpenAI>["embedding"]>;
+  private readonly llmModelId: string;
+  private readonly embedModelId: string;
 
   constructor(settings: Settings) {
     const openaiKey = process.env.OPENAI_API_KEY;
@@ -112,21 +115,51 @@ export class AiSdkClient implements LlmClient {
     const anthropic = createAnthropic({ apiKey: anthropicKey, fetch: stripSamplingParams });
     this.model = anthropic(settings.llmModel);
     this.embedder = openai.embedding(settings.embedModel, { dimensions: settings.embedDim });
+    this.llmModelId = settings.llmModel;
+    this.embedModelId = settings.embedModel;
   }
 
-  async embed(text: string): Promise<number[]> {
-    const { embedding, usage } = await embed({ model: this.embedder, value: text || " " });
+  async embed(text: string, phase = "embed"): Promise<number[]> {
+    const value = text || " ";
+    const start = Date.now();
+    const { embedding, usage } = await embed({ model: this.embedder, value });
     recordEmbeddingUsage(usage?.tokens);
+    logCall({
+      kind: "embedding",
+      phase,
+      model: this.embedModelId,
+      inputTokens: usage?.tokens,
+      outputTokens: undefined, // embeddings produce no completion tokens
+      latencyMs: Date.now() - start,
+      request: value,
+      response: `[${this.dim}-dim vector]`,
+    });
     return embedding;
   }
 
-  async embedMany(texts: string[]): Promise<number[][]> {
+  async embedMany(texts: string[], phase = "embed"): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const { embeddings, usage } = await embedMany({
-      model: this.embedder,
-      values: texts.map((t) => t || " "),
-    });
+    const values = texts.map((t) => t || " ");
+    const start = Date.now();
+    const { embeddings, usage } = await embedMany({ model: this.embedder, values });
     recordEmbeddingUsage(usage?.tokens);
+    const latencyMs = Date.now() - start;
+    // One CSV row per embedded text — embedMany is a single API round-trip but
+    // covers N inputs; per-input rows keep the audit granular. The batch usage
+    // (total tokens) is attributed to the first row so the column sum stays
+    // truthful while every text gets its own auditable line.
+    for (let i = 0; i < values.length; i++) {
+      logCall({
+        kind: "embedding",
+        phase,
+        model: this.embedModelId,
+        inputTokens: i === 0 ? usage?.tokens : undefined,
+        outputTokens: undefined,
+        latencyMs,
+        request: values[i],
+        response: `[${this.dim}-dim vector]`,
+      });
+    }
     return embeddings;
   }
 
@@ -141,6 +174,7 @@ export class AiSdkClient implements LlmClient {
     // neither. Structured `generateObject` output is already near-deterministic.
     // maxRetries re-asks on a transient miss; experimental_repairText salvages
     // fenced/prefixed JSON before the schema even sees it.
+    const start = Date.now();
     const { object, usage } = await generateObject({
       model: this.model,
       schema: args.schema as z.ZodType<T>,
@@ -150,6 +184,18 @@ export class AiSdkClient implements LlmClient {
       experimental_repairText: repairJsonText,
     });
     recordLlmUsage(usage?.promptTokens, usage?.completionTokens);
+    logCall({
+      kind: "llm",
+      phase: args.purpose,
+      model: this.llmModelId,
+      inputTokens: usage?.promptTokens,
+      outputTokens: usage?.completionTokens,
+      latencyMs: Date.now() - start,
+      // request = the full prompt actually sent (system preamble + user prompt).
+      request: args.system ? `${args.system}\n\n${args.prompt}` : args.prompt,
+      // response = the full structured output the model produced.
+      response: JSON.stringify(object),
+    });
     return object;
   }
 }

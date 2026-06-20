@@ -35,3 +35,7 @@ ASSIGNMENT.md
 
 # Downloaded benchmark datasets (large; not tracked)
 bench/data/
+
+# Run logs (per-call LLM CSVs etc.) — folder kept, contents ignored
+logs/*
+!logs/.gitkeep
