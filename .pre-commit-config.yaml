@@ -1,0 +1,29 @@
+# Guardrails that run on every commit. Install once:  pre-commit install
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-yaml
+      - id: check-json
+      - id: detect-private-key  # never commit a key/secret
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff          # lint
+        args: [--fix]
+      - id: ruff-format   # format
+
+  # Local hook: every formal requirement of the assignment must hold.
+  - repo: local
+    hooks:
+      - id: assignment-requirements
+        name: assignment requirements check
+        entry: python scripts/check_requirements.py
+        language: system
+        pass_filenames: false
+        always_run: true

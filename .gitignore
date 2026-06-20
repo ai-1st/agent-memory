@@ -1,1 +1,29 @@
 .claude/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+
+# Local data / volumes / dbs
+data/
+*.db
+*.sqlite
+*.sqlite3
+bench/results/
+*.egg-info/

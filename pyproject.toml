@@ -1,0 +1,60 @@
+[project]
+name = "memory-service"
+version = "0.0.1"
+description = "A memory service for an AI agent: ingest turns, extract structured knowledge, answer recall."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pydantic>=2.6",
+    # Optional LLM extractor uses these; included so the container supports
+    # MEMORY_EXTRACTOR=llm out of the box (imported lazily).
+    "openai>=1.30",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pre-commit>=3.7",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "bench", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4"]
+# E501 (line length) is handled by the formatter; long string literals are fine.
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency markers are designed to be called in argument defaults.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Header",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["src"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+files = ["src"]
