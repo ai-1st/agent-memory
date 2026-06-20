@@ -115,6 +115,34 @@ query" is the behavior reviewers look for.
 
 ---
 
+## v6 — LoCoMo campaign: coverage floods the pipeline; precision wins (23→30)
+
+**What changed:** Three measured iterations on the hardest benchmark (LoCoMo,
+Haiku, N=100), as the designated "playground" for the SOTA techniques.
+
+1. **Date-anchoring at extraction** (shared with all builds): the turn timestamp
+   flows into extraction and "last Saturday" resolves to an absolute date.
+2. **Coverage levers — measured FAILURES, reverted.** Exhaustive extraction (flat,
+   22%) and chunked extraction + RETRIEVE_K 20→50 (**−11, 12%**). Root cause: this
+   build's recall is a *staged* pipeline (rewrite → hybrid+RRF → graph-expand → LLM
+   rerank → abstention gate → assemble → LLM compact). Flooding it with candidates
+   spreads the rerank scores thin, **nothing clears the abstention floor, and recall
+   returns EMPTY** (tokens/recall p50 → 0). Its strength (many precise stages) is
+   exactly what makes it fragile to volume — the opposite of opinionated's single
+   rerank-and-write, which absorbs coverage gracefully (+10 there).
+3. **Precision wins (iter-3, kept).** A temporal date-boost in `combined()` (the
+   rerank/fused blend) and the stable sort: on a temporal query, boost candidates
+   whose value carries an absolute year so dated facts rank into the budget — *no
+   change to candidate volume*. **23 → 30** (multi-hop 19→34, recall 48→55).
+
+**Why it matters:** the negatives pinned the rule that explains the whole campaign —
+coverage only helps a recall layer that triages a large set *in one pass*; a staged
+pipeline needs *selection* instead. Temporal stayed 5% — maxxed's separate LLM
+compaction still strips dates, a deeper issue than a ranking boost fixes (noted as
+next-step). 44 tests green; tsc + biome clean.
+
+---
+
 ## What I'd cut to ship lean
 
 If forced to a minimal, cheap, low-latency service, in order of what goes first:

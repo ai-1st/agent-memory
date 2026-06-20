@@ -27,17 +27,24 @@ lever was benchmarked (Haiku, N=100) before keeping it.
    follow-up queries from the first-round facts and merges results. On LoCoMo: 55 vs
    57 — the wider recall already covers it; the extra call is cost+noise. Kept
    env-gated off (`MEMORY_MULTI_QUERY`). A clean negative result, not dead code.
-5. **Temporal narration discipline (iter-2).** Recall now surfaces exact dates
-   verbatim and states order/interval when two dated facts are relevant.
+5. **Temporal-narration prompt (iter-2) — measured, REVERTED.** Instructing recall
+   to "surface every dated fact" over-crowded the compaction and *hurt* recall
+   (87→68); net 67→62. A reasonable hypothesis the benchmark rejected.
+6. **Deeper coverage (iter-3, kept).** Smaller chunks (`CHUNK_SIZE` 6→4) + wider
+   recall (`SEMANTIC_LIMIT` 24→32) — the single rerank-and-write absorbs the larger
+   set, so it converts to accuracy. **67→76** (multi-hop 53→72: more bridge facts in
+   the pool).
 
 **Why this fits the build's identity:** every change rides on the existing
 extract → per-fact reconcile → LLM-rerank/compaction spine. The reranker is exactly
 what lets coverage pay off (it triages the larger candidate set to budget) — the
 same lever *backfired* on the reranker-less `simple` build.
 
-**Observed:** LoCoMo 27 → 42 → 57 → 67. Temporal 16→46, multi-hop 13→34. The
-coverage thesis — get the fact into the candidate set the reranker scores — is the
-whole game on long multi-session data.
+**Observed:** LoCoMo **27 → 42 → 57 → 67 → 76** (strict@0.8: 70%). Temporal 16→70,
+multi-hop 13→72. The coverage thesis — get the fact into the candidate set the
+reranker scores — is the whole game on long multi-session data, and opinionated's
+single rerank-and-write is exactly the recall shape that lets coverage pay off
+(the same lever floods `simple` and `maxxed`, which need selection instead).
 
 ---
 

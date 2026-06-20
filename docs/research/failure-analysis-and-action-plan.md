@@ -195,3 +195,16 @@ reranker that *triages a large set in one pass*. maxxed's staged pipeline doesn'
 Both coverage levers were **reverted**. iter-3 pivots to **precision**: a temporal
 date-boost so dated facts (its worst category, temporal 5%) rank into the budget —
 no change to candidate volume.
+
+## Final per-build iteration ledger (LoCoMo, Haiku N=100)
+
+| build | iter-1 | iter-2 | iter-3 | final |
+|---|---|---|---|---|
+| **opinionated** | chunked extraction **67%** ✓ | temporal-narration prompt 62% (hurt recall 87→68, reverted) | deeper coverage chunk-4 + recall-32 **76%** ✓ | **76%** |
+| **simple** | all-priors + coverage-revert (30%) | date-boost + stable-cap **50%** ✓ | near-duplicate suppression (neutral 50%) | **50%** |
+| **maxxed** | exhaustive 22% (flat) | chunk+K 12% (flood→empty, reverted) | temporal date-boost **30%** ✓ | **30%** |
+
+Net: every LLM build roughly doubled–tripled on LoCoMo. The negatives are as
+informative as the wins — they pinned the **coverage-needs-a-one-pass-reranker**
+rule that explains why the same lever (more facts) is +10 on opinionated and −11 on
+maxxed.

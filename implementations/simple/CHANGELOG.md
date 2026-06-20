@@ -172,6 +172,33 @@ green. `docker build` succeeds; container boots healthy and serves the smoke flo
 
 ---
 
+## v8 — LoCoMo campaign: selection, not coverage (24→50)
+
+**What changed:** Three measured iterations on LoCoMo (Haiku, N=100), within the
+"stay simple" contract (prompt + deterministic scoring only — no reranker, no graph).
+
+1. **Date-anchoring** (shared): the turn timestamp flows into extraction; relative
+   dates resolve to absolute ones baked into the value. (24→30.)
+2. **The coverage trap (measured, reverted).** An "extract exhaustively" rule —
+   the lever that gave opinionated +10 — **regressed simple to 24%**. simple has no
+   reranker and dumps a *budget-capped* context, so more facts just crowd out the
+   needle. Kept the **all-priors breadcrumb** ("previously X; before that Y").
+3. **Selection wins (the +20).** Dated facts are `event` type (episodic) and were
+   crowded out below the always-on stable facts. Two deterministic fixes: a
+   **temporal date-boost** (on a temporal query, rank facts carrying an absolute
+   year up) and a **stable-budget cap** (reserve ~40% of the budget for episodic so
+   the dated event isn't starved). **30 → 50** (temporal 14→54, multi-hop 25→34,
+   recall 55→61).
+4. **Near-duplicate suppression** (iter-3): skip a stable fact ≥0.8 token-Jaccard to
+   one already emitted. Neutral on LoCoMo, harmless budget hygiene.
+
+**Why it matters:** simple's lesson is the inverse of opinionated's — *selection*,
+not coverage. Getting the one dated fact into a tight, reranker-less budget is the
+whole game; pouring in more facts actively hurts. Achieved with prompt + arithmetic,
+no new subsystem. 29 tests green; tsc + biome clean.
+
+---
+
 ## Known gaps / next steps (deliberately out of scope here)
 
 - **No entity graph.** Multi-hop is handled by always surfacing stable facts,
