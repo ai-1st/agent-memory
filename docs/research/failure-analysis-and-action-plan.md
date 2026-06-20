@@ -39,8 +39,9 @@ Failures: **T1** (temporal), **T2** (LoCoMo coverage), **T5** (prior[0]).
 Failures: **T3** (empty recall), **T4** (over-narration), **T1** (temporal).
 - **T3 — retention guard:** never let the LLM compaction zero out a clear hit. If a candidate has a high embedding similarity *or* exact-substring match to the query but the LLM returns empty/!selected, include it via the existing deterministic fallback. Keeps LLM-as-reranker; adds a safety net (same class as the recall fallback already there).
 - **T4 — tighten the narration prompt:** narrate only what the dated facts state; never assert an ordering or a *resolution* not supported by a fact. For contradictions, narrate the tension as **unresolved** unless an explicit resolution fact exists (directly fixes the "Denver finalized" control miss while keeping the narration identity).
+- **Correction vs reversal (from adversarial `slot_collision` 2/3):** route an explicit *correction* ("no wait, it's Y") to a clean UPDATE/supersede; reserve keep-both + link for genuine preference/opinion *reversals*. Removes the ambiguity that costs the slot-collision probes without abandoning keep-both where it earns its keep (multihop 4/4, stale_trap 3/3).
 - **T1 — shared date-anchoring** (below).
-- **Keep:** the CONTRADICT link graph + tension narration — that's the design's whole point.
+- **Keep:** the CONTRADICT link graph + tension narration — adversarial proves it's worth keeping (multihop 4/4, temporal_duration 2/2 — best of all builds).
 
 ### `maxxed` — free to add layers
 Failures: **T1** (temporal), **T6** (abstention), **T7** (multi-hop), **T5** (prior[0]).
@@ -63,11 +64,41 @@ once and adopt it in each extractor. It's "simple-safe" (prompt-only) so even
 5. **T6 / T7 maxxed layers** — abstention gate, multi-hop expansion.
 6. **T4 opinionated narration discipline** — prompt tightening.
 
-## Appendix — results landing as runs complete
-- LoCoMo (N=100): baseline **15%** → simple **24%** → maxxed **26%** →
-  opinionated **27%**. LLM builds cluster ~10–12 pts over the floor; 73 pts of
-  headroom remain — this is where the improvement work should be measured.
-- Adversarial (N=30): _running_ — baseline 20%, simple 63% so far (it
-  discriminates). Per-category breakdown (quantifying T5 `history_full`/`stale_trap`,
-  T6 `abstain_distractor`, T3 `leak_control`, T7 `multihop_decoy`) lands when the
-  LLM builds finish.
+## Appendix — completed results
+
+### LoCoMo (N=100, realistic long multi-session)
+baseline **15%** → simple **24%** → maxxed **26%** → opinionated **27%**. LLM
+builds cluster ~10–12 pts over the floor; **73 pts of headroom** — measure the
+improvement work here.
+
+### Adversarial (N=30) — the discriminating set, per category
+
+| category | baseline | simple | maxxed | opinionated |
+|---|---|---|---|---|
+| stale_trap | 1/3 | 2/3 | 2/3 | **3/3** |
+| history_full | 0/3 | 0/3 | 1/3 | 1/3 |
+| leak_control | 0/4 | 3/4 | 3/4 | 3/4 |
+| slot_collision | 0/3 | **3/3** | **3/3** | 2/3 |
+| abstain_distractor | 4/6 | 5/6 | 5/6 | 5/6 |
+| multihop_decoy | 0/4 | 2/4 | 3/4 | **4/4** |
+| temporal_order | 1/3 | 2/3 | 1/3 | 2/3 |
+| temporal_duration | 0/2 | 0/2 | 1/2 | **2/2** |
+| control_easy | 0/2 | 2/2 | 2/2 | 2/2 |
+| **OVERALL** | **20%** | **63%** | **70%** | **80%** |
+
+**This is the result that reverses the earlier "no accuracy premium" read** (that
+read came from saturated/low-N probes). On a set that actually discriminates:
+
+- **opinionated's design pays off on hard reasoning** — `multihop_decoy` 4/4 (its
+  link-following recall chains entities), `temporal_duration` 2/2, `stale_trap`
+  3/3. This is the empirical case *for* keeping opinionated.
+- **opinionated's one backfire — `slot_collision` 2/3** (simple/maxxed 3/3):
+  keep-both creates ambiguity when the user merely *corrected* a value rather than
+  reversed a preference. **New action item (true to the idea):** route explicit
+  corrections ("no wait, it's Y") to a clean UPDATE/supersede; reserve keep-both +
+  link for genuine preference/opinion reversals. Same root as T4.
+- **`history_full` is hard for everyone** (≤1/3) — confirms T5 is a real, shared
+  gap; the all-priors breadcrumb fix targets it directly.
+- **abstention barely separates** (all ~5/6, baseline 4/6) — T6; maxxed's gate is
+  the place to fix it.
+- **temporal_order still weak for all** (1–2/3) — T1 remains the top shared fix.

@@ -19,10 +19,13 @@ identical.
 
 **Run shape (cost-bounded, parallel).** The four implementations ran as concurrent
 sequences. `baseline` (free, no LLM) ran every benchmark at full-ish N; the LLM
-builds ran the *tractable* benchmarks at smaller N. **LoCoMo is baseline-only** —
-its full-conversation ingestion (~830 turns per pair, regardless of probe limit)
-into a live-LLM service is a separate multi-hour batch; the adapter is ready.
-N (probes) is shown next to each cell; small N ⇒ ranking signal, not a precise rate.
+builds ran the *tractable* benchmarks at smaller N. **LoCoMo now runs on the LLM
+builds too** (N=100, one conversation), and a new **`adversarial`** fixture targets
+the discriminating cases. N (probes) is shown next to each cell; small N ⇒ ranking
+signal, not a precise rate. See the
+[probe-discrimination audit](research/probe-discrimination-audit.md) for why N
+matters and the [Reading](#reading--updated-after-the-discriminating-runs-n40-locomo-on-llm-builds-adversarial)
+section for the conclusion.
 
 ## Validity caveats (read first)
 
@@ -58,7 +61,8 @@ We scanned every service + run log for rate limits and errors:
 | custom | 33% (12) | 100% (12) | 92% (12) | 100% (12) |
 | longmemeval | 37% (100) | **93% (15)** | 73% (15) | 87% (15) |
 | ruler-niah | 100% (60) | **100% (30)** | 80% (30) | 80% (30) |
-| locomo | 15% (100) | — | — | — |
+| locomo | 15% (100) | 24% (100) | 26% (100) | **27% (100)** |
+| adversarial | 20% (30) | 63% (30) | 70% (30) | **80% (30)** |
 
 Notes:
 - **Haiku barely costs accuracy.** Across the board it lands within a few points of
@@ -158,21 +162,33 @@ So opinionated's link-graph produces the **cleanest** contradiction narration bu
 3× more. Its value, if any, is qualitative (explicit reason in the narration), not a
 measurable win on this benchmark.
 
-## Reading
+## Reading — UPDATED after the discriminating runs (N=40, LoCoMo on LLM builds, adversarial)
 
-Across every benchmark and both models, **`simple` is the standout**: top-or-tied
-accuracy, the lowest cost and latency, and the most Haiku-robust — at the price of
-larger recall context. **`maxxed`** matches it on the easy benchmarks but degrades
-under Haiku and is the slowest on recall. **`opinionated`** is competitive on
-accuracy and produces the richest contradiction narration, but its per-fact
-reconcile fan-out makes it 3–8× more expensive for no accuracy premium, and even its
-signature contradiction fixture doesn't show it ahead. **Haiku is a viable default**
-— near-Opus accuracy at ~1/15 the cost — and the right model for everything except
-possibly the hardest reasoning probes.
+> An earlier version of this section concluded "`simple` is the standout /
+> `opinionated` has no accuracy premium." **That was an artifact of saturated,
+> low-N probes.** Once we raised N and added discriminating fixtures, the picture
+> changed — see the [probe-discrimination audit](research/probe-discrimination-audit.md)
+> and [failure analysis](research/failure-analysis-and-action-plan.md).
 
-If we shipped one: **`simple` on Haiku**, with opinionated's narrated-contradiction
-idea grafted in only where a use case actually needs the prior side surfaced.
+- **On saturated/clustered benchmarks the builds tie.** longmemeval at N=40:
+  simple 75 / opinionated 77.5 / maxxed 70 (a 7.5-pt cluster, not the
+  simple-93/maxxed-73 the N=15 run implied). LoCoMo (N=100): baseline 15 → simple
+  24 → maxxed 26 → opinionated 27 — all LLM builds ~10–12 pts over the floor.
+- **On the adversarial set (which actually discriminates), `opinionated` wins:**
+  baseline 20 → simple 63 → maxxed 70 → **opinionated 80**. Its link-following
+  recall takes `multihop_decoy` 4/4, `temporal_duration` 2/2, `stale_trap` 3/3 —
+  so the link-graph design **does** earn its 3–8× cost on hard reasoning. Its one
+  backfire is `slot_collision` 2/3 (keep-both is wrong for a plain correction).
+- **Shared weaknesses (all builds):** temporal arithmetic/ordering, full A→B→C
+  history (the `prior[0]`-only breadcrumb), and multi-hop chaining for simple.
+- **Haiku is a viable default** — near-Opus accuracy at ~1/15 the cost; cost
+  ranking is call-count-bound, not per-token.
 
-_Caveats: LLM-build columns on the standard benchmarks are bounded-N (Opus N=3–6;
-Haiku N=12–30); treat single-digit-N cells as ranking signal. LoCoMo is
-baseline-only. Cost is an estimate at list prices and excludes the Opus judge._
+**Revised take:** no single build dominates. `simple` is the best cost/latency for
+clustered workloads; `opinionated` is the accuracy leader on hard reasoning and
+worth developing further; `maxxed` is the layer-it-on middle. Next: the
+per-implementation [improvement action plan](research/failure-analysis-and-action-plan.md).
+
+_Caveats: longmemeval N=40, ruler N=30, LoCoMo N=100, adversarial N=30 (Haiku);
+Opus standard-benchmark cells remain low-N (3–6) — ranking signal only. Cost is a
+list-price estimate excluding the Opus judge._

@@ -27,6 +27,13 @@ unless marked _pending_. Detail lives in
   simple 24% → maxxed 26% → opinionated 27% (N=100). The LLM builds cluster ~10–12
   pts above the floor, opinionated marginally best — again *not* a simple runaway.
   This is the benchmark that matters most and where the headroom is (73 pts).
+- **The adversarial set REVERSES the earlier "simple wins / opinionated has no
+  premium" read:** baseline 20% → simple 63% → maxxed 70% → **opinionated 80%**.
+  On probes that actually discriminate, opinionated's link-graph design *earns its
+  cost* — `multihop_decoy` 4/4, `temporal_duration` 2/2, `stale_trap` 3/3 (best of
+  all builds). Its one backfire: `slot_collision` 2/3 (keep-both is wrong for a
+  plain correction). **The earlier conclusion was an artifact of non-discriminating
+  tests — this changes the recommendation in §4.5.**
 - **The remaining gaps are specific, not diffuse** — see §3.
 
 ## 3. The failure taxonomy → what we'd change (DECISION NEEDED: approve directions)
@@ -36,7 +43,7 @@ maxxed grows freely**:
 | Build | Top failures | Proposed fix (respecting its contract) |
 |---|---|---|
 | **simple** | temporal arithmetic; LoCoMo coverage; loses A in A→B→C | one-line all-priors breadcrumb; date-anchor at extraction (prompt only); widen recall + speaker-scope. **No new subsystems.** |
-| **opinionated** | empty recall on needle queries (5/6 ruler); over-narration asserting wrong conclusions | retention guard so compaction can't drop a strong hit; tighten narration to "unresolved unless a resolution fact exists". **Keeps the link-graph + narration identity.** |
+| **opinionated** | empty recall on needle queries (5/6 ruler); over-narration; keep-both backfires on plain corrections (slot_collision 2/3) | retention guard so compaction can't drop a strong hit; narrate "unresolved unless resolved"; route corrections→clean UPDATE, reserve keep-both for true reversals. **Keeps the link-graph + narration identity (which adversarial proves wins: multihop 4/4, temporal_duration 2/2).** |
 | **maxxed** | temporal; weak abstention; multi-hop | add a temporal layer, an abstention gate, a multi-hop expansion layer. **Free to add layers.** |
 
 **Highest-leverage shared fix: date-anchoring at extraction** — temporal is the
@@ -54,12 +61,18 @@ dominant longmemeval failure for *all three* and it's prompt-only.
    the work?
 4. **Model for the improvement loop:** Haiku default (near-Opus accuracy at ~1/15
    cost), Opus only for a final confirmation run?
-5. **opinionated's cost:** it's the most expensive build (3–8× the calls) with no
-   accuracy premium except richer narration. Keep developing it as-is (your "stay
-   true to the idea"), or cap its fan-out?
+5. **opinionated's cost — reframed by the adversarial result:** it's the most
+   expensive build (3–8× the calls), but it now shows a *real* accuracy premium on
+   hard reasoning (adversarial 80% vs 63–70%; multihop 4/4). So the question is no
+   longer "is it worth it" but "**keep developing as-is**, or also cap its fan-out
+   cost while keeping the link-graph that delivers the win?" My read: keep it; the
+   premium is real where it matters.
 
-## 5. Pending inputs (fold in before you decide)
-- **LoCoMo** N=100 — ✅ complete (baseline 15 / simple 24 / maxxed 26 / opinionated 27).
-- **adversarial** N=30 — _running_; early: baseline 20%, simple 63% (it
-  discriminates — hard enough to leave headroom, unlike the saturated old set).
-  opinionated/maxxed landing; full per-category breakdown will confirm T5/T6/T3/T7.
+## 5. Inputs — all complete ✅
+- **LoCoMo** N=100 — baseline 15 / simple 24 / maxxed 26 / opinionated 27.
+- **adversarial** N=30 — baseline 20 / simple 63 / maxxed 70 / opinionated 80;
+  per-category breakdown in
+  [failure-analysis-and-action-plan.md](failure-analysis-and-action-plan.md#adversarial-n30--the-discriminating-set-per-category).
+
+Both fixtures discriminate (the original concern). The suite is now a
+defensible basis for the improvement work.
