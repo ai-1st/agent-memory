@@ -9,6 +9,7 @@
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { loadSettings } from "./config";
+import { errStr } from "./logging";
 
 const settings = loadSettings();
 const { app, ready } = createApp();
@@ -23,6 +24,6 @@ ready
     });
   })
   .catch((err) => {
-    console.error("failed to initialize store:", err);
+    console.error(`failed to initialize store: ${errStr(err)}`);
     process.exit(1);
   });

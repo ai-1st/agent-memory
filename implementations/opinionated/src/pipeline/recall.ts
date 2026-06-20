@@ -18,6 +18,7 @@
  */
 
 import type { LLMProvider } from "../llm/provider";
+import { errStr } from "../logging";
 import type { Citation } from "../models";
 import type { MemoryRow, Store } from "../store";
 import { estimateTokens } from "../tokens";
@@ -66,17 +67,24 @@ export class RecallPipeline {
     const simScore = new Map<string, number>();
 
     if (query.trim()) {
-      const [qEmb] = await this.llm.embed([query]);
-      if (qEmb) {
-        const sims = await this.store.similarMemories({
-          userId,
-          embedding: qEmb,
-          limit: SEMANTIC_LIMIT,
-        });
-        for (const m of sims) {
-          byId.set(m.id, m);
-          simScore.set(m.id, m.similarity);
+      try {
+        const [qEmb] = await this.llm.embed([query]);
+        if (qEmb) {
+          const sims = await this.store.similarMemories({
+            userId,
+            embedding: qEmb,
+            limit: SEMANTIC_LIMIT,
+          });
+          for (const m of sims) {
+            if (!m) continue;
+            byId.set(m.id, m);
+            simScore.set(m.id, m.similarity);
+          }
         }
+      } catch (err) {
+        // Embedding/search is best-effort: a transient model error must not 500
+        // recall. We still proceed with stable facts + recent turns below.
+        console.warn(`recall semantic search failed, continuing with facts/turns: ${errStr(err)}`);
       }
     }
 
@@ -88,7 +96,10 @@ export class RecallPipeline {
 
     // Follow contradiction links over everything we have so far.
     const linked = await this.store.expandLinks([...byId.keys()]);
-    for (const m of linked) byId.set(m.id, m);
+    for (const m of linked) {
+      if (!m) continue;
+      byId.set(m.id, m);
+    }
 
     // Build a quick lookup of contradiction partners for annotation.
     const contradictsNote = new Map<string, string[]>();
@@ -101,6 +112,10 @@ export class RecallPipeline {
     // --- candidate lines for memories ---
     const candidates: Candidate[] = [];
     for (const m of byId.values()) {
+      // Defensive: a malformed/undefined candidate (e.g. a row that lost its
+      // value, or an undefined slipped in from a link/rerank lookup) must never
+      // crash recall. Skip it rather than read `.value` off undefined.
+      if (!m || typeof m.value !== "string") continue;
       const prior = m.supersedes ? await this.priorValue(m.supersedes) : null;
       const sim = simScore.get(m.id);
       let line = `[${m.type}]`;
@@ -153,7 +168,7 @@ export class RecallPipeline {
       });
     } catch (err) {
       // Degrade gracefully: deterministic assembly if the LLM call fails.
-      console.warn("recall LLM failed, falling back to deterministic assembly:", err);
+      console.warn(`recall LLM failed, falling back to deterministic assembly: ${errStr(err)}`);
       return this.fallback(candidates, budget);
     }
 
@@ -162,6 +177,7 @@ export class RecallPipeline {
       const extra = await this.store.sessionMemories(sessionId);
       let added = false;
       for (const m of extra) {
+        if (!m || typeof m.value !== "string") continue;
         if (!byId.has(m.id)) {
           byId.set(m.id, m);
           added = true;

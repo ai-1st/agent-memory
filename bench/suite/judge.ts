@@ -45,6 +45,27 @@ export function mean(xs: number[]): number {
 
 export const estTokens = (s: string): number => Math.ceil((s?.length ?? 0) / 4);
 
+export interface MetricsSnapshot {
+  llmCalls: number;
+  llmIn: number;
+  llmOut: number;
+  embCalls: number;
+  embTok: number;
+}
+
+/** Read a service's cumulative token counters (zeros if /metrics is absent). */
+export async function fetchMetrics(url: string): Promise<MetricsSnapshot> {
+  const r = await http("GET", `${url}/metrics`);
+  const m = r.status === 200 ? r.body : null;
+  return {
+    llmCalls: m?.llm?.calls ?? 0,
+    llmIn: m?.llm?.input_tokens ?? 0,
+    llmOut: m?.llm?.output_tokens ?? 0,
+    embCalls: m?.embedding?.calls ?? 0,
+    embTok: m?.embedding?.tokens ?? 0,
+  };
+}
+
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY ?? "";
 function anthropicUrl(): string {
   const base = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");

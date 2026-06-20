@@ -67,7 +67,7 @@ export class MockLlmClient implements LlmClient {
   }
 
   async generateObject<T>(args: {
-    schema: z.ZodType<T>;
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>;
     system?: string;
     prompt: string;
     purpose: string;

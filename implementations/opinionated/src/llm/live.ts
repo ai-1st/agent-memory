@@ -14,6 +14,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { embedMany, generateObject } from "ai";
 import type { z } from "zod";
 import type { Settings } from "../config";
+import { recordEmbedding, recordLlm } from "../metrics";
 import type { LLMProvider } from "./provider";
 
 export function createLiveProvider(settings: Settings): LLMProvider {
@@ -53,7 +54,8 @@ export function createLiveProvider(settings: Settings): LLMProvider {
 
     async embed(texts: string[]): Promise<number[][]> {
       if (texts.length === 0) return [];
-      const { embeddings } = await embedMany({ model: embeddingModel, values: texts });
+      const { embeddings, usage } = await embedMany({ model: embeddingModel, values: texts });
+      recordEmbedding(usage?.tokens);
       return embeddings;
     },
 
@@ -66,12 +68,13 @@ export function createLiveProvider(settings: Settings): LLMProvider {
       // NOTE: claude-opus-4-8 removed the `temperature` sampling parameter
       // (sending it returns a 400). Determinism is steered via the prompts
       // (low-ambiguity instructions) and structured-output schemas instead.
-      const { object } = await generateObject({
+      const { object, usage } = await generateObject({
         model: chatModel,
         schema: args.schema,
         system: args.system,
         prompt: args.prompt,
       });
+      recordLlm(usage?.promptTokens, usage?.completionTokens);
       return object;
     },
   };

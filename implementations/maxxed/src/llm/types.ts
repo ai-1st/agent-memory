@@ -25,9 +25,15 @@ export interface LlmClient {
   embed(text: string): Promise<number[]>;
   embedMany(texts: string[]): Promise<number[][]>;
 
-  /** Structured generation constrained to a Zod schema. */
+  /**
+   * Structured generation constrained to a Zod schema.
+   *
+   * The schema type allows a differing input type (`z.ZodType<T, _, unknown>`)
+   * so tolerant/normalising schemas built with `z.preprocess` (whose parse input
+   * is `unknown` but output is `T`) still infer `T` correctly at call sites.
+   */
   generateObject<T>(args: {
-    schema: z.ZodType<T>;
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>;
     system?: string;
     prompt: string;
     /** Free-form label for logs / tracing. */

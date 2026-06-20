@@ -19,8 +19,13 @@
  */
 
 import type { z } from "zod";
+import { recordEmbedding, recordLlm } from "../metrics";
 import type { extractionSchema, recallPlanSchema, reconcileSchema } from "../pipeline/schemas";
 import type { LLMProvider } from "./provider";
+
+// Synthetic ~4-chars/token estimate so offline metrics still move (the mock does
+// no real model work and has no real usage to report).
+const synthTokens = (text: string): number => Math.max(1, Math.ceil((text || "").length / 4));
 
 const DIM = 256;
 
@@ -526,6 +531,7 @@ export function createMockProvider(): LLMProvider {
     name: "mock",
 
     async embed(texts: string[]): Promise<number[][]> {
+      recordEmbedding(texts.reduce((acc, t) => acc + synthTokens(t), 0));
       return texts.map((t) => embedOne(t));
     },
 
@@ -553,7 +559,9 @@ export function createMockProvider(): LLMProvider {
         default:
           obj = {};
       }
-      return args.schema.parse(obj);
+      const parsed = args.schema.parse(obj);
+      recordLlm(synthTokens(`${args.system}\n${args.prompt}`), synthTokens(JSON.stringify(parsed)));
+      return parsed;
     },
   };
 }

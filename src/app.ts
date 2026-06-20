@@ -49,6 +49,16 @@ export function createApp(dbPath?: string): AppBundle {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
+  // Token-spend metrics. The baseline uses no LLM/embeddings, so these are always
+  // zero — exposed for parity with the LLM builds so the benchmark harness can
+  // diff /metrics uniformly across implementations.
+  app.get("/metrics", (c) =>
+    c.json({
+      llm: { calls: 0, input_tokens: 0, output_tokens: 0 },
+      embedding: { calls: 0, tokens: 0 },
+    }),
+  );
+
   app.post("/turns", async (c) => {
     const parsed = turnRequestSchema.safeParse(await readJson(c));
     if (!parsed.success) {

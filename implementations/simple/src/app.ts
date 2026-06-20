@@ -15,6 +15,7 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { makeAuth } from "./auth";
 import type { Settings } from "./config";
+import { snapshot as metricsSnapshot } from "./metrics";
 import { recallRequestSchema, searchRequestSchema, turnRequestSchema } from "./models";
 import type { Provider } from "./provider";
 import { Recaller } from "./recall";
@@ -67,6 +68,12 @@ export async function createApp(
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
+  // Cumulative token spend since process start, in the exact shape the benchmark
+  // harness diffs across a run:
+  //   { llm: { calls, input_tokens, output_tokens },
+  //     embedding: { calls, tokens } }
+  app.get("/metrics", (c) => c.json(metricsSnapshot()));
+
   app.post("/turns", async (c) => {
     const parsed = turnRequestSchema.safeParse(await readJson(c));
     if (!parsed.success) {
@@ -78,6 +85,10 @@ export async function createApp(
       content: m.content ?? "",
       name: m.name ?? null,
     }));
+
+    // Snapshot token counters so we can log THIS turn's spend (the delta) once
+    // the embed + extract + per-memory embed work below has run.
+    const before = metricsSnapshot();
 
     const text = turnText(messages);
     let turnEmbedding: number[] | null = null;
@@ -117,6 +128,17 @@ export async function createApp(
     } catch (err) {
       console.warn(`extraction error on turn ${turnId}:`, err);
     }
+
+    // Concise per-turn token line: this turn's LLM + embedding spend (the delta
+    // from the snapshot above). Mock provider reports zero tokens.
+    const after = metricsSnapshot();
+    console.log(
+      `[turn ${turnId}] llm_calls=${after.llm.calls - before.llm.calls} ` +
+        `in=${after.llm.input_tokens - before.llm.input_tokens} ` +
+        `out=${after.llm.output_tokens - before.llm.output_tokens} ` +
+        `embed_calls=${after.embedding.calls - before.embedding.calls} ` +
+        `embed_tokens=${after.embedding.tokens - before.embedding.tokens}`,
+    );
 
     return c.json({ id: turnId }, 201);
   });

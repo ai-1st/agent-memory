@@ -24,6 +24,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { embed, embedMany, generateObject } from "ai";
 import { z } from "zod";
 import type { Settings } from "./config";
+import { recordEmbedding, recordLlm } from "./metrics";
 import type { Message } from "./models";
 
 // 3072 is the native width of text-embedding-3-large. The mock matches it so the
@@ -135,40 +136,44 @@ export class LiveProvider implements Provider {
       .join("\n");
     if (!transcript.trim()) return [];
 
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: this.anthropic("claude-opus-4-8"),
       schema: extractionSchema,
       system: EXTRACTION_SYSTEM,
       prompt: `Conversation turn:\n${transcript}`,
     });
+    recordLlm(usage);
     return object.memories.map((m) => ({ ...m, snippet: transcript.slice(0, 280) }));
   }
 
   async embed(text: string): Promise<number[]> {
-    const { embedding } = await embed({
+    const { embedding, usage } = await embed({
       model: this.openai.textEmbeddingModel("text-embedding-3-large"),
       value: text || " ",
     });
+    recordEmbedding(usage?.tokens);
     return embedding;
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
     if (texts.length === 0) return [];
-    const { embeddings } = await embedMany({
+    const { embeddings, usage } = await embedMany({
       model: this.openai.textEmbeddingModel("text-embedding-3-large"),
       values: texts.map((t) => t || " "),
     });
+    recordEmbedding(usage?.tokens);
     return embeddings;
   }
 
   async compact(context: string, query: string, maxTokens: number): Promise<string> {
-    const { object } = await generateObject({
+    const { object, usage } = await generateObject({
       model: this.anthropic("claude-opus-4-8"),
       schema: z.object({ context: z.string() }),
       system:
         "You compress an agent's memory context so it fits a token budget. Keep the markdown headers and the highest-value facts for answering the query. Drop low-value lines. Never invent facts. Preserve dates and supersession notes.",
       prompt: `Query: ${query}\nBudget: ~${maxTokens} tokens.\n\nContext to compress:\n${context}`,
     });
+    recordLlm(usage);
     return object.context;
   }
 }
@@ -314,6 +319,10 @@ export class MockProvider implements Provider {
   readonly name = "mock";
 
   async extract(messages: Message[]): Promise<ExtractedMemory[]> {
+    // Offline: no tokens are actually spent. Record the call with zero usage so
+    // the /metrics call counters still tick (the harness/tests can observe a
+    // turn happened) without inventing token spend.
+    recordLlm();
     const out: ExtractedMemory[] = [];
     const seen = new Set<string>();
     for (const msg of messages) {
@@ -342,14 +351,17 @@ export class MockProvider implements Provider {
   }
 
   async embed(text: string): Promise<number[]> {
+    recordEmbedding();
     return hashEmbed(text);
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
+    recordEmbedding();
     return texts.map(hashEmbed);
   }
 
   async compact(context: string, _query: string, maxTokens: number): Promise<string> {
+    recordLlm();
     // Deterministic offline compaction: drop trailing lines until it fits.
     const budgetChars = maxTokens * 4;
     if (context.length <= budgetChars) return context;

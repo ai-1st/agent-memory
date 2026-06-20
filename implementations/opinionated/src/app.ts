@@ -14,9 +14,11 @@ import type { Context } from "hono";
 import { makeAuth } from "./auth";
 import { type Settings, loadSettings } from "./config";
 import { type LLMProvider, buildProvider } from "./llm";
+import { errStr } from "./logging";
+import { snapshot as metricsSnapshot } from "./metrics";
 import { recallRequestSchema, searchRequestSchema, turnRequestSchema } from "./models";
 import { IngestPipeline } from "./pipeline/ingest";
-import { RecallPipeline } from "./pipeline/recall";
+import { RecallPipeline, type RecallResult } from "./pipeline/recall";
 import { Store } from "./store";
 
 export interface AppBundle {
@@ -56,13 +58,18 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
   const app = new Hono();
   app.use("*", makeAuth(settings.authToken));
 
-  // Robustness: never crash the process on an unexpected error.
+  // Robustness: never crash the process on an unexpected error. Log via errStr
+  // (never the raw object) so util.inspect can't throw while formatting it.
   app.onError((err, c) => {
-    console.error("unhandled error:", err);
+    console.error("unhandled error:", errStr(err));
     return c.json({ error: "internal error" }, 500);
   });
 
   app.get("/health", (c) => c.json({ status: "ok" }));
+
+  // Cumulative token spend across ALL LLM + embedding calls since process start.
+  // Shape is fixed by contract (the benchmark harness diffs it).
+  app.get("/metrics", (c) => c.json(metricsSnapshot()));
 
   app.post("/turns", async (c) => {
     const parsed = turnRequestSchema.safeParse(await readJson(c));
@@ -87,6 +94,7 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
     });
 
     // 2-4) Synchronous extract -> per-fact reconcile -> apply (incl. links).
+    const before = metricsSnapshot();
     try {
       await ingest.run(messages, {
         userId: req.user_id ?? null,
@@ -96,8 +104,21 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       });
     } catch (err) {
       // Raw turn already persisted; extraction failure must not fail the write.
-      console.warn(`extraction error on turn ${turnId}:`, err);
+      // Log via errStr so the logging call itself can never throw (which would
+      // escape this catch and 500 the request — the original bug).
+      console.warn(`extraction error on turn ${turnId}: ${errStr(err)}`);
     }
+    // Concise per-turn token line (this turn's delta + cumulative since startup).
+    const after = metricsSnapshot();
+    console.log(
+      `turn ${turnId} tokens: llm +${after.llm.input_tokens - before.llm.input_tokens}in/` +
+        `+${after.llm.output_tokens - before.llm.output_tokens}out ` +
+        `(${after.llm.calls - before.llm.calls} calls), ` +
+        `embed +${after.embedding.tokens - before.embedding.tokens} ` +
+        `(${after.embedding.calls - before.embedding.calls} calls) | ` +
+        `cumulative llm ${after.llm.input_tokens}in/${after.llm.output_tokens}out, ` +
+        `embed ${after.embedding.tokens}`,
+    );
     return c.json({ id: turnId }, 201);
   });
 
@@ -107,12 +128,21 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       return c.json({ error: "invalid request", detail: parsed.error.issues }, 422);
     }
     const req = parsed.data;
-    const r = await recall.run({
-      query: req.query,
-      userId: req.user_id ?? null,
-      sessionId: req.session_id ?? null,
-      maxTokens: req.max_tokens,
-    });
+    // Recall must ALWAYS return 200 (possibly empty). recall.run already degrades
+    // internally; this is the final belt-and-suspenders so no malformed candidate,
+    // link, or transient model error can ever turn /recall into a 500.
+    let r: RecallResult;
+    try {
+      r = await recall.run({
+        query: req.query,
+        userId: req.user_id ?? null,
+        sessionId: req.session_id ?? null,
+        maxTokens: req.max_tokens,
+      });
+    } catch (err) {
+      console.error(`recall failed, returning empty context: ${errStr(err)}`);
+      r = { context: "", citations: [] };
+    }
     return c.json({ context: r.context, citations: r.citations });
   });
 
@@ -128,7 +158,7 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
         const [emb] = await llm.embed([req.query]);
         embedding = emb ?? null;
       } catch (err) {
-        console.warn("search embed failed, falling back to lexical:", err);
+        console.warn(`search embed failed, falling back to lexical: ${errStr(err)}`);
       }
     }
     const results = await store.search({

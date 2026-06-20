@@ -14,6 +14,7 @@ import { makeAuth } from "./auth";
 import { type Settings, loadSettings } from "./config";
 import { buildExtractor } from "./extraction";
 import { buildLlmClient } from "./llm";
+import { getMetrics, metricsLine } from "./llm/metrics";
 import type { LlmClient } from "./llm/types";
 import { recallRequestSchema, searchRequestSchema, turnRequestSchema } from "./models";
 import { buildRecaller } from "./recall";
@@ -65,6 +66,11 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
     }
   });
 
+  // Cumulative token spend since process start, across ALL LLM + embedding calls.
+  // Shape is fixed by the benchmark harness (it diffs this object). Offline/mock
+  // runs report zeros (no real tokens spent).
+  app.get("/metrics", (c) => c.json(getMetrics()));
+
   app.post("/turns", async (c) => {
     const parsed = turnRequestSchema.safeParse(await readJson(c));
     if (!parsed.success) {
@@ -109,6 +115,9 @@ export function createApp(opts: CreateAppOptions = {}): AppBundle {
       // Persistence already succeeded; extraction failure must not fail the write.
       console.warn(`extraction error on turn ${turnId}:`, (err as Error).message);
     }
+
+    // Per-turn token-spend line (cumulative since start). Cheap and concise.
+    console.log(`turn ${turnId} processed | ${metricsLine()}`);
 
     return c.json({ id: turnId }, 201);
   });

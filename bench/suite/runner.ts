@@ -4,10 +4,17 @@
  * three-axis card (accuracy-by-category / tokens-per-recall / p50-p95 latency).
  */
 
-import { http, estTokens, judge, mean, pctl } from "./judge";
-import type { Card, ProbeResult, Scenario, Stat } from "./types";
+import { http, estTokens, fetchMetrics, judge, mean, pctl } from "./judge";
+import type { Card, Cost, ProbeResult, Scenario, Stat } from "./types";
 
 const stat = (xs: number[]): Stat => ({ mean: mean(xs), p50: pctl(xs, 50), p95: pctl(xs, 95) });
+
+// Approximate USD per 1M tokens — adjust as provider pricing changes.
+const PRICE = { llmIn: 15, llmOut: 75, embed: 0.13 };
+const round = (n: number, d: number): number => {
+  const f = 10 ** d;
+  return Math.round(n * f) / f;
+};
 
 export async function runScenarios(
   url: string,
@@ -19,6 +26,8 @@ export async function runScenarios(
   const recallMs: number[] = [];
   const ctxTokens: number[] = [];
   const results: ProbeResult[] = [];
+
+  const m0 = await fetchMetrics(url);
 
   // Ingest (synchronous per contract). Reset each user first for idempotent reruns.
   for (const sc of scenarios) {
@@ -62,6 +71,21 @@ export async function runScenarios(
     }
   }
 
+  const m1 = await fetchMetrics(url);
+  const cost: Cost = {
+    llm_calls: m1.llmCalls - m0.llmCalls,
+    llm_input_tokens: m1.llmIn - m0.llmIn,
+    llm_output_tokens: m1.llmOut - m0.llmOut,
+    embedding_calls: m1.embCalls - m0.embCalls,
+    embedding_tokens: m1.embTok - m0.embTok,
+    est_usd: round(
+      ((m1.llmIn - m0.llmIn) / 1e6) * PRICE.llmIn +
+        ((m1.llmOut - m0.llmOut) / 1e6) * PRICE.llmOut +
+        ((m1.embTok - m0.embTok) / 1e6) * PRICE.embed,
+      4,
+    ),
+  };
+
   const byCat: Record<string, { pass: number; total: number }> = {};
   for (const r of results) {
     if (!byCat[r.category]) byCat[r.category] = { pass: 0, total: 0 };
@@ -82,6 +106,7 @@ export async function runScenarios(
     tokensPerRecall: stat(ctxTokens),
     recallLatencyMs: stat(recallMs),
     ingestLatencyMs: stat(ingestMs),
+    cost,
     judgeErrors: results.filter((r) => r.note === "JUDGE_ERROR").length,
     results,
   };
@@ -105,6 +130,9 @@ export function printCard(card: Card): void {
   );
   process.stderr.write(
     `ingest ms: mean ${card.ingestLatencyMs.mean} (p50 ${card.ingestLatencyMs.p50} / p95 ${card.ingestLatencyMs.p95})\n`,
+  );
+  process.stderr.write(
+    `cost: ~$${card.cost.est_usd}  (llm ${card.cost.llm_input_tokens}in/${card.cost.llm_output_tokens}out tok in ${card.cost.llm_calls} calls; embed ${card.cost.embedding_tokens} tok)\n`,
   );
   if (card.judgeErrors) process.stderr.write(`judge errors: ${card.judgeErrors}\n`);
 }

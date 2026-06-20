@@ -62,6 +62,16 @@ export interface Stat {
   p95: number;
 }
 
+/** Token spend for one run (delta of the service's /metrics across the run). */
+export interface Cost {
+  llm_calls: number;
+  llm_input_tokens: number;
+  llm_output_tokens: number;
+  embedding_calls: number;
+  embedding_tokens: number;
+  est_usd: number;
+}
+
 /** The mem0 three-axis scorecard: accuracy-by-category / tokens-per-recall / latency. */
 export interface Card {
   adapter: string;
@@ -74,6 +84,7 @@ export interface Card {
   tokensPerRecall: Stat;
   recallLatencyMs: Stat;
   ingestLatencyMs: Stat;
+  cost: Cost;
   judgeErrors: number;
   results: ProbeResult[];
 }
