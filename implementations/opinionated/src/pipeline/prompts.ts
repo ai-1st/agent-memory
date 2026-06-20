@@ -17,6 +17,7 @@ Rules:
 - 'mutable' = true for single-valued slots that get replaced over time (location, employment, name). false for additive slots where several values coexist (allergies, multiple pets, multiple hobbies).
 - 'snippet' is the shortest verbatim span from the turn that supports the fact (used to cite the source).
 - confidence in [0,1]: explicit first-person statements ~0.9; clearly implied ~0.6; weakly inferred ~0.4.
+- BE EXHAUSTIVE on long/multi-message turns. A single turn may pack many durable facts (events with dates, people, places, plans, preferences, milestones) across several messages — extract EVERY one as its own fact, not just the most salient. A later question may hinge on any detail mentioned (a date, a name, a one-off plan); a fact you skip is a question you cannot answer. Favor coverage over brevity here, while still only recording durable facts about the USER.
 - If the turn contains no durable user facts (smalltalk, noise), return an empty list. Do NOT invent facts.`;
 
 export function extractPrompt(turnText: string, timestamp: string | null): string {

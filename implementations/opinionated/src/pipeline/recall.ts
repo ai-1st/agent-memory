@@ -25,8 +25,12 @@ import { estimateTokens } from "../tokens";
 import { RECALL_SYSTEM, recallPrompt } from "./prompts";
 import { recallPlanSchema } from "./schemas";
 
-const SEMANTIC_LIMIT = 12;
-const RECENT_TURN_LIMIT = 8;
+// Wider candidate breadth for long multi-session histories (LoCoMo): the gating
+// failure is "relevant fact not retrieved", so pull more neighbours + recent
+// turns. The LLM reranker still triages down to the budget, so breadth costs
+// recall tokens, not answer quality.
+const SEMANTIC_LIMIT = 24;
+const RECENT_TURN_LIMIT = 12;
 const STABLE_TYPES = new Set(["fact", "preference", "opinion"]);
 
 export interface RecallArgs {
