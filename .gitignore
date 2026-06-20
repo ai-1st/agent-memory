@@ -29,3 +29,6 @@ bench/results/
 # Python (legacy)
 __pycache__/
 *.pyc
+
+# Local-only: the assignment brief (kept on disk, not tracked)
+ASSIGNMENT.md
