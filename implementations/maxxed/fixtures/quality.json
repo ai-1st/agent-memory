@@ -1,0 +1,145 @@
+{
+  "description": "maxxed self-eval fixture. Scripted multi-session conversations + probe queries spanning every graded category: recall quality, fact evolution/contradiction, multi-hop, temporal/as-of, noise/abstention, cross-session, extraction (implicit + typed), opinion arc. Probe format matches bench/harness.ts (expect_any / expect_all / expect_empty) so the same harness scores it.",
+  "scenarios": [
+    {
+      "name": "alice_lifecycle",
+      "user_id": "fx_alice",
+      "turns": [
+        {
+          "session_id": "alice-s1",
+          "timestamp": "2026-01-10T09:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Hey! I'm Alice. I live in Berlin." },
+            { "role": "assistant", "content": "Nice to meet you, Alice!" }
+          ]
+        },
+        {
+          "session_id": "alice-s1",
+          "timestamp": "2026-01-10T09:01:00Z",
+          "messages": [
+            { "role": "user", "content": "I work at Stripe as a backend engineer." },
+            { "role": "assistant", "content": "What do you build there?" }
+          ]
+        },
+        {
+          "session_id": "alice-s1",
+          "timestamp": "2026-01-10T09:02:00Z",
+          "messages": [
+            { "role": "user", "content": "I have a dog named Biscuit, a corgi." },
+            { "role": "assistant", "content": "Corgis are adorable!" }
+          ]
+        },
+        {
+          "session_id": "alice-s2",
+          "timestamp": "2026-02-15T18:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Biscuit and I went hiking near the lake all weekend." },
+            { "role": "assistant", "content": "Sounds like a great weekend." }
+          ]
+        },
+        {
+          "session_id": "alice-s3",
+          "timestamp": "2026-03-20T11:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Big news — I just left Stripe and joined Notion!" },
+            { "role": "assistant", "content": "Congrats on the new role!" }
+          ]
+        },
+        {
+          "session_id": "alice-s3",
+          "timestamp": "2026-03-20T11:01:00Z",
+          "messages": [
+            { "role": "user", "content": "Also I'm relocating from Berlin to New York City next month." },
+            { "role": "assistant", "content": "Exciting move!" }
+          ]
+        },
+        {
+          "session_id": "alice-s4",
+          "timestamp": "2026-04-25T08:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Settled into NYC. Biscuit loves Central Park." },
+            { "role": "assistant", "content": "Glad you're settling in." }
+          ]
+        }
+      ],
+      "probes": [
+        { "query": "Where does Alice live now?", "session_id": "alice-probe", "expect_any": ["nyc", "new york"] },
+        { "query": "Where does Alice work?", "session_id": "alice-probe", "expect_any": ["notion"] },
+        { "query": "What is the user's current job?", "session_id": "alice-probe", "expect_any": ["notion"] },
+        { "query": "What is the name of Alice's dog?", "session_id": "alice-probe", "expect_any": ["biscuit"] },
+        { "query": "What city does the owner of the dog named Biscuit live in?", "session_id": "alice-probe", "expect_all": ["biscuit"], "expect_any": ["nyc", "new york"] },
+        { "query": "What outdoor hobby does Alice enjoy?", "session_id": "alice-probe", "expect_any": ["hiking", "hik"] },
+        { "query": "What is Alice's favorite programming language?", "session_id": "alice-probe", "expect_empty": true }
+      ]
+    },
+    {
+      "name": "bob_job_change",
+      "user_id": "fx_bob",
+      "turns": [
+        {
+          "session_id": "bob-s1",
+          "timestamp": "2025-01-10T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I work at Stripe as an engineer." },
+            { "role": "assistant", "content": "Nice, what do you work on?" }
+          ]
+        },
+        {
+          "session_id": "bob-s3",
+          "timestamp": "2025-03-20T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I just joined Notion as a PM." },
+            { "role": "assistant", "content": "Congrats on the new role!" }
+          ]
+        }
+      ],
+      "probes": [
+        { "query": "Where does the user work?", "session_id": "bob-probe", "expect_any": ["notion"] },
+        { "query": "What is the user's current job title?", "session_id": "bob-probe", "expect_any": ["pm", "notion"] }
+      ]
+    },
+    {
+      "name": "carol_opinion_arc",
+      "user_id": "fx_carol",
+      "turns": [
+        {
+          "session_id": "carol-s1",
+          "timestamp": "2026-01-05T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I love TypeScript, it's my favorite language." },
+            { "role": "assistant", "content": "TypeScript is great for big codebases." }
+          ]
+        },
+        {
+          "session_id": "carol-s2",
+          "timestamp": "2026-03-05T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Honestly I dislike TypeScript generics now, they're getting annoying." },
+            { "role": "assistant", "content": "Generics can get hairy." }
+          ]
+        }
+      ],
+      "probes": [
+        { "query": "How does the user feel about TypeScript?", "session_id": "carol-probe", "expect_any": ["typescript"] }
+      ]
+    },
+    {
+      "name": "dave_diet_allergy",
+      "user_id": "fx_dave",
+      "turns": [
+        {
+          "session_id": "dave-s1",
+          "timestamp": "2026-02-01T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I'm vegetarian and I'm allergic to shellfish." },
+            { "role": "assistant", "content": "Good to know, I'll keep that in mind." }
+          ]
+        }
+      ],
+      "probes": [
+        { "query": "What are the user's dietary restrictions?", "session_id": "dave-probe", "expect_any": ["vegetarian"] },
+        { "query": "Is the user allergic to anything?", "session_id": "dave-probe", "expect_any": ["shellfish"] }
+      ]
+    }
+  ]
+}
