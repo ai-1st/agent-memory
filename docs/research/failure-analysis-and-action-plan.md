@@ -102,3 +102,35 @@ read came from saturated/low-N probes). On a set that actually discriminates:
 - **abstention barely separates** (all ~5/6, baseline 4/6) — T6; maxxed's gate is
   the place to fix it.
 - **temporal_order still weak for all** (1–2/3) — T1 remains the top shared fix.
+
+## Phase-1 results — date-anchoring at extraction (Haiku, LoCoMo N=100)
+
+Threaded the turn timestamp into extraction for all three builds + instructed
+relative→absolute date resolution ("last Saturday" → 2023-05-13, baked into the
+value). Validated live. LoCoMo before→after:
+
+| build | overall | temporal | multihop | recall |
+|---|---|---|---|---|
+| simple | 24→**30** | 5→14 | 19→25 | 52→55 |
+| maxxed | 26→**23** ⚠️ | 5→5 | 19→19 | 58→48 |
+| **opinionated** | 27→**42** | **16→46** | **13→34** | 55→45 |
+
+**Anchoring pays off only where the recall layer USES the dates.** opinionated's
+LLM rerank/compaction narrates with the dates (temporal +30, multihop +21) →
+**+15 overall, now 42%**. maxxed's compaction strips dates back out (temporal flat)
+and baking dates into values drifted embeddings enough to cost single-hop recall
+(58→48) → **net −3**. simple just dumps context: modest gains on "what-date" probes.
+
+**Two side-effects to fix:** (1) maxxed needs date-PRESERVATION in its recall
+prompt before anchoring helps it; (2) inlining dates into `value` hurts non-temporal
+retrieval (embedding drift) — embed on key+undated text, keep the date for display.
+
+**Reframed diagnosis (from opinionated's residuals):** the remaining LoCoMo
+failures are dominated by **missing facts** — "no record of X documented", "no
+signup date documented", "never specifies Sweden" — i.e. **extraction completeness
++ retrieval coverage**, NOT temporal arithmetic. The dates that exist already work.
+A subset of `recall` misses are cat3 commonsense-inference questions (subjective,
+some judge-debatable). So Lever 2 is **denser extraction on long sessions + wider
+recall**, focused on **opinionated** (the build that responds to the levers and is
+approved to develop as-is). Honest ceiling unchanged: ~55–65% is a strong target;
+<20% failure remains a stretch given cat3 subjectivity + extraction limits.
