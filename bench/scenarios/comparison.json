@@ -1,0 +1,307 @@
+{
+  "name": "comparison-v1",
+  "description": "Shared, harder benchmark run identically against all implementations and scored by an LLM judge. Each probe has a natural-language `expected` answer (for the judge), plus deterministic secondary signals (`must_include` / `abstain`). `category` groups probes for per-capability scoring. Designed so a lexical/no-LLM baseline fails the semantic, arc, abstention, and 'moving/paraphrase' probes while the LLM builds differ in nuance.",
+  "scenarios": [
+    {
+      "name": "relocation_paraphrase",
+      "user_id": "cmp-alice",
+      "turns": [
+        {
+          "session_id": "alice-1",
+          "timestamp": "2025-02-10T09:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "I'm originally from NYC but I packed up and now call Berlin home."
+            },
+            {
+              "role": "assistant",
+              "content": "Berlin's a great city — how's the move treating you?"
+            }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "para-1",
+          "category": "paraphrase_semantic",
+          "query": "Where does the user live now?",
+          "session_id": "alice-probe",
+          "max_tokens": 512,
+          "expected": "Berlin (they moved there from NYC).",
+          "must_include": ["berlin"]
+        }
+      ]
+    },
+    {
+      "name": "job_evolution",
+      "user_id": "cmp-bob",
+      "turns": [
+        {
+          "session_id": "bob-1",
+          "timestamp": "2025-01-12T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I'm a backend engineer at Stripe." },
+            { "role": "assistant", "content": "Nice, what part of the stack?" }
+          ]
+        },
+        {
+          "session_id": "bob-3",
+          "timestamp": "2025-03-22T10:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Quick update — I left Stripe and just started as a PM at Notion."
+            },
+            { "role": "assistant", "content": "Congrats on the switch!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "fe-1",
+          "category": "fact_evolution",
+          "query": "What is the user's current job?",
+          "session_id": "bob-probe",
+          "max_tokens": 512,
+          "expected": "Product Manager at Notion (the current role).",
+          "must_include": ["notion"]
+        },
+        {
+          "id": "fe-2",
+          "category": "fact_evolution",
+          "query": "Where did the user work before their current job?",
+          "session_id": "bob-probe",
+          "max_tokens": 512,
+          "expected": "Stripe, as a backend engineer (history must be preserved).",
+          "must_include": ["stripe"]
+        }
+      ]
+    },
+    {
+      "name": "opinion_arc",
+      "user_id": "cmp-carol",
+      "turns": [
+        {
+          "session_id": "carol-1",
+          "timestamp": "2025-01-05T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "I absolutely love TypeScript, honestly the best language I've used."
+            },
+            { "role": "assistant", "content": "What do you like most about it?" }
+          ]
+        },
+        {
+          "session_id": "carol-2",
+          "timestamp": "2025-02-20T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Ugh, TypeScript generics are getting really annoying to wrangle."
+            },
+            { "role": "assistant", "content": "Generics can get hairy, yeah." }
+          ]
+        },
+        {
+          "session_id": "carol-3",
+          "timestamp": "2025-04-01T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Honestly TS is fine for big apps, but these days I reach for Python for quick scripts."
+            },
+            { "role": "assistant", "content": "Right tool for the job." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "arc-1",
+          "category": "opinion_arc",
+          "query": "How does the user feel about TypeScript these days?",
+          "session_id": "carol-probe",
+          "max_tokens": 512,
+          "expected": "Nuanced/current: TS is fine for big apps but they prefer Python for quick scripts now — a shift from initially loving it. A stale 'loves TypeScript' answer is wrong.",
+          "must_include": ["python"]
+        }
+      ]
+    },
+    {
+      "name": "multihop_implicit_moving",
+      "user_id": "cmp-dave",
+      "turns": [
+        {
+          "session_id": "dave-1",
+          "timestamp": "2025-03-02T07:30:00Z",
+          "messages": [
+            { "role": "user", "content": "Took the morning off to walk Biscuit along the river." },
+            { "role": "assistant", "content": "Sounds peaceful." }
+          ]
+        },
+        {
+          "session_id": "dave-2",
+          "timestamp": "2025-03-09T07:30:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Moving to Lisbon next week has me stressed but excited."
+            },
+            { "role": "assistant", "content": "Big move — good luck!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "impl-1",
+          "category": "implicit",
+          "query": "Does the user have a pet?",
+          "session_id": "dave-probe",
+          "max_tokens": 512,
+          "expected": "Yes — a dog (implied) named Biscuit.",
+          "must_include": ["biscuit"]
+        },
+        {
+          "id": "mh-1",
+          "category": "multihop",
+          "query": "What city is the user with the dog named Biscuit moving to?",
+          "session_id": "dave-probe",
+          "max_tokens": 512,
+          "expected": "Lisbon (connects the pet fact and the move fact).",
+          "must_include": ["lisbon"]
+        }
+      ]
+    },
+    {
+      "name": "noise_abstention",
+      "user_id": "cmp-erin",
+      "turns": [
+        {
+          "session_id": "erin-1",
+          "timestamp": "2025-02-01T08:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I'm vegetarian and allergic to peanuts." },
+            { "role": "assistant", "content": "Noted, I'll keep that in mind." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "diet-1",
+          "category": "recall",
+          "query": "Any dietary restrictions I should know about?",
+          "session_id": "erin-probe",
+          "max_tokens": 512,
+          "expected": "Vegetarian; allergic to peanuts.",
+          "must_include": ["vegetarian", "peanut"]
+        },
+        {
+          "id": "noise-1",
+          "category": "noise_abstention",
+          "query": "What is the user's favorite football team?",
+          "session_id": "erin-probe",
+          "max_tokens": 512,
+          "expected": "Unknown / never discussed. The service should abstain — return empty or say nothing is known — NOT volunteer unrelated facts or invent a team.",
+          "abstain": true
+        }
+      ]
+    },
+    {
+      "name": "temporal_recency",
+      "user_id": "cmp-frank",
+      "turns": [
+        {
+          "session_id": "frank-1",
+          "timestamp": "2024-06-15T08:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I live in Toronto." },
+            { "role": "assistant", "content": "Cold winters!" }
+          ]
+        },
+        {
+          "session_id": "frank-2",
+          "timestamp": "2025-03-10T08:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I moved to Vancouver in March for work." },
+            { "role": "assistant", "content": "Hope the move went smoothly." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "temp-1",
+          "category": "temporal",
+          "query": "Where does the user currently live?",
+          "session_id": "frank-probe",
+          "max_tokens": 512,
+          "expected": "Vancouver (current); Toronto is the older, superseded location.",
+          "must_include": ["vancouver"]
+        }
+      ]
+    },
+    {
+      "name": "budget_triage",
+      "user_id": "cmp-gina",
+      "turns": [
+        {
+          "session_id": "gina-1",
+          "timestamp": "2025-01-20T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "I'm a data scientist at Spotify, based in Stockholm. I'm vegan, I have a cat named Pixel, and I really prefer concise, direct answers."
+            },
+            { "role": "assistant", "content": "Got it — I'll keep things concise." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "bud-1",
+          "category": "budget",
+          "query": "Summarize what you know about this user.",
+          "session_id": "gina-probe",
+          "max_tokens": 80,
+          "expected": "Within a very tight budget, the highest-value stable facts should survive: job (data scientist at Spotify), location (Stockholm). Output must be compact (roughly <= 80 tokens).",
+          "must_include": ["spotify"]
+        }
+      ]
+    },
+    {
+      "name": "cross_session_isolation",
+      "user_id": "cmp-henry",
+      "turns": [
+        {
+          "session_id": "henry-1",
+          "timestamp": "2025-02-02T08:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I drive a Tesla Model 3." },
+            { "role": "assistant", "content": "Nice ride." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "id": "xs-1",
+          "category": "recall",
+          "query": "What car does the user drive?",
+          "session_id": "henry-probe",
+          "max_tokens": 512,
+          "expected": "A Tesla Model 3.",
+          "must_include": ["tesla"]
+        },
+        {
+          "id": "xs-2",
+          "category": "noise_abstention",
+          "query": "What car does this user drive?",
+          "session_id": "isolated-probe",
+          "user_id": "cmp-nobody",
+          "max_tokens": 512,
+          "expected": "Unknown — this is a different user with no data. Must abstain (empty), not leak cmp-henry's Tesla.",
+          "abstain": true
+        }
+      ]
+    }
+  ]
+}

@@ -42,5 +42,21 @@ Point `--scenario` at any such file to benchmark a different dataset.
 
 This is the iteration loop: change a pipeline, re-run with a new `--label`, then
 `--compare` to see whether the number moved. Record meaningful jumps in
-[`../CHANGELOG.md`](../CHANGELOG.md). The four implementations (`main` baseline +
-`impl/opinionated` + `impl/simple` + `impl/maxxed`) are compared this way.
+[`../CHANGELOG.md`](../CHANGELOG.md).
+
+## Comparison report (all four)
+
+The four implementations live as folders — the baseline at the repo root plus
+`implementations/{opinionated,simple,maxxed}`. To run the **same** harder benchmark
+([`scenarios/comparison.json`](scenarios/comparison.json)) against all of them and
+check each against the assignment's formal requirements — scored by an LLM judge
+(Claude Opus 4.8) — from the repo root:
+
+```bash
+bash scripts/run-comparison.sh   # boots all four, runs bench/report.ts, tears down
+```
+
+It writes the raw `bench/results/REPORT.md` + `report.json` (git-ignored); the
+curated snapshot with the written analysis is committed at
+[`../docs/COMPARISON.md`](../docs/COMPARISON.md). `bench/report.ts` can also be run
+standalone against already-running services (see its header).
