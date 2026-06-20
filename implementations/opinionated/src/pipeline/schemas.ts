@@ -97,3 +97,14 @@ export const recallPlanSchema = z.object({
   context: z.string().default(""),
 });
 export type RecallPlan = z.infer<typeof recallPlanSchema>;
+
+/**
+ * Multi-query retrieval (experimental, env-gated): given the query and the facts
+ * the first retrieval round surfaced, the LLM proposes follow-up search queries
+ * (bridge entities, sub-questions, related angles) to pull facts the single
+ * first-round query missed. Each is embedded + searched and the results merged.
+ */
+export const queryExpansionSchema = z.object({
+  queries: z.array(z.string()).default([]),
+});
+export type QueryExpansion = z.infer<typeof queryExpansionSchema>;

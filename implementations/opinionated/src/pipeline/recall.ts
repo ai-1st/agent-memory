@@ -22,8 +22,13 @@ import { errStr } from "../logging";
 import type { Citation } from "../models";
 import type { MemoryRow, Store } from "../store";
 import { estimateTokens } from "../tokens";
-import { RECALL_SYSTEM, recallPrompt } from "./prompts";
-import { recallPlanSchema } from "./schemas";
+import {
+  QUERY_EXPANSION_SYSTEM,
+  RECALL_SYSTEM,
+  queryExpansionPrompt,
+  recallPrompt,
+} from "./prompts";
+import { queryExpansionSchema, recallPlanSchema } from "./schemas";
 
 // Wider candidate breadth for long multi-session histories (LoCoMo): the gating
 // failure is "relevant fact not retrieved", so pull more neighbours + recent
@@ -32,6 +37,15 @@ import { recallPlanSchema } from "./schemas";
 const SEMANTIC_LIMIT = 24;
 const RECENT_TURN_LIMIT = 12;
 const STABLE_TYPES = new Set(["fact", "preference", "opinion"]);
+
+// Multi-query retrieval (experimental, env-gated MEMORY_MULTI_QUERY=1): after the
+// first retrieval, the LLM proposes follow-up queries grounded in the surfaced
+// facts; each is embedded + searched and merged. Targets multi-hop "bridge fact"
+// and coverage misses (the dominant LoCoMo residual). Off by default → the
+// default build is unchanged.
+const MULTI_QUERY = /^(1|true|on)$/i.test(process.env.MEMORY_MULTI_QUERY ?? "");
+const EXPANSION_FACTS = 12; // first-round facts shown to the expansion planner
+const EXPANSION_QUERY_LIMIT = 8; // neighbours pulled per follow-up query
 
 export interface RecallArgs {
   query: string;
@@ -90,6 +104,12 @@ export class RecallPipeline {
         // recall. We still proceed with stable facts + recent turns below.
         console.warn(`recall semantic search failed, continuing with facts/turns: ${errStr(err)}`);
       }
+    }
+
+    // Optional second retrieval round: LLM proposes follow-up queries from the
+    // first-round facts; embed + search each; merge. Best-effort.
+    if (MULTI_QUERY && query.trim() && byId.size > 0) {
+      await this.expandAndMerge(query, userId, byId, simScore);
     }
 
     // Always include stable active facts (multi-hop + always-on profile).
@@ -237,6 +257,59 @@ export class RecallPipeline {
 
     if (!context) return { context: "", citations: [] };
     return { context, citations };
+  }
+
+  /**
+   * Multi-query expansion: ask the LLM for follow-up search queries grounded in
+   * the first-round facts, then embed + search each and merge the hits into the
+   * candidate maps (keeping the best similarity per memory). Best-effort — any
+   * failure leaves the first-round candidates untouched.
+   */
+  private async expandAndMerge(
+    query: string,
+    userId: string | null,
+    byId: Map<string, MemoryRow>,
+    simScore: Map<string, number>,
+  ): Promise<void> {
+    try {
+      const seed = [...byId.values()]
+        .filter((m): m is MemoryRow => !!m && typeof m.value === "string")
+        .sort((a, b) => (simScore.get(b.id) ?? 0) - (simScore.get(a.id) ?? 0))
+        .slice(0, EXPANSION_FACTS)
+        .map((m) => `- [${m.type}] ${m.value}`)
+        .join("\n");
+
+      const plan = await this.llm.generate({
+        schema: queryExpansionSchema,
+        system: QUERY_EXPANSION_SYSTEM,
+        prompt: queryExpansionPrompt(query, seed),
+        task: "recall_expand",
+      });
+      const queries = (plan.queries ?? [])
+        .map((q) => q.trim())
+        .filter((q) => q.length > 0)
+        .slice(0, 4);
+      if (queries.length === 0) return;
+
+      const embeddings = await this.llm.embed(queries, "embed_query");
+      const searches = await Promise.all(
+        embeddings.map((emb) =>
+          emb
+            ? this.store.similarMemories({ userId, embedding: emb, limit: EXPANSION_QUERY_LIMIT })
+            : Promise.resolve([]),
+        ),
+      );
+      for (const hits of searches) {
+        for (const m of hits) {
+          if (!m) continue;
+          if (!byId.has(m.id)) byId.set(m.id, m);
+          const prev = simScore.get(m.id);
+          if (prev === undefined || m.similarity > prev) simScore.set(m.id, m.similarity);
+        }
+      }
+    } catch (err) {
+      console.warn(`recall multi-query expansion failed, continuing: ${errStr(err)}`);
+    }
   }
 
   private async priorValue(supersededId: string): Promise<string | null> {

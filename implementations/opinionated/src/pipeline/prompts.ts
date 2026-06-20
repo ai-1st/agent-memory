@@ -83,6 +83,27 @@ Rules:
 - If NOTHING is relevant, return an empty context string "" and an empty selected_ids list. Do not invent facts.
 - 'selected_ids' = the candidate ids you actually used (drives citations). 'want_session_facts' = true only if you needed the whole session's facts but they weren't provided.`;
 
+export const QUERY_EXPANSION_SYSTEM = `You plan follow-up retrieval for a long-term memory store. You are given a user QUERY and the facts a FIRST semantic search already surfaced. Propose additional search queries that would pull facts the first search likely MISSED but that are needed to answer the query fully.
+
+Focus on:
+- BRIDGE entities for multi-hop questions: if answering needs an intermediate hop (a person, place, org, date the first facts hint at), make a query that targets that hop. E.g. query "what city does the user's sister live in?" + a fact "the user's sister is Mia" -> add the query "where does Mia live?".
+- SUB-QUESTIONS that decompose the query into the specific facts it depends on.
+- RELATED ANGLES / synonyms / adjacent slots the first phrasing didn't match.
+
+Rules:
+- Return 2-4 SHORT, specific search queries (each a phrase you would embed and search), not prose.
+- Ground them in the surfaced facts — name the concrete entities/dates you saw. Do not invent facts.
+- If the first results already fully cover the query, return an empty list.`;
+
+export function queryExpansionPrompt(query: string, facts: string): string {
+  return `QUERY: ${query}
+
+Facts surfaced by the first search:
+${facts || "(none)"}
+
+Propose the follow-up search queries.`;
+}
+
 export function recallPrompt(args: {
   query: string;
   budgetTokens: number;
