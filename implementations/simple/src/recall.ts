@@ -185,11 +185,13 @@ export class Recaller {
     return { context, citations };
   }
 
-  /** "(updated 2025-03-15; previously Stripe)" — the supersession breadcrumb. */
+  /** "(updated 2025-03-15; previously Stripe; before that Acme)" — the full
+   *  supersession breadcrumb. Keeping ALL priors (not just the most recent) lets
+   *  recall answer "what were the earlier values" on an A->B->C history. */
   private async factNote(userId: string | null, m: MemoryRow): Promise<string> {
     let note = ` (updated ${dateOf(m.updated_at)}`;
     const prior = await this.store.supersededValues(userId, m.key);
-    if (prior.length > 0) note += `; previously ${prior[0]}`;
+    if (prior.length > 0) note += `; previously ${prior.join("; before that ")}`;
     note += ")";
     return note;
   }

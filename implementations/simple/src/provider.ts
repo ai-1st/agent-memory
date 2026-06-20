@@ -109,6 +109,10 @@ Rules:
 - confidence: 0.9+ for explicit first-person statements, ~0.6 for implicit/inferred.
 - DATES: the turn's timestamp is given below. Resolve every relative time expression to an absolute date using it — "last Saturday", "three weeks ago", "yesterday", "this morning" => an explicit YYYY-MM-DD. For event facts, put the absolute date IN the value (e.g. "User went hiking on 2023-05-13", not "User went hiking last Saturday"). Never store a bare relative expression; a later reader has no access to the turn timestamp.
 - Prefer precision. If nothing durable was said, return an empty list.`;
+// NOTE: an "extract exhaustively" coverage rule was tried here and MEASURED to
+// regress LoCoMo (30% -> 24%): simple dumps a budget-capped context with no
+// reranker, so more facts crowd out the needle. Coverage is the right lever for
+// builds WITH a reranker (opinionated/maxxed), not for simple. Reverted.
 
 /**
  * Resolve a provider base URL. If the env var is unset, use `fallback` (the SDK
