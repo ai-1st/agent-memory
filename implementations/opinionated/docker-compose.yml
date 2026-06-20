@@ -1,0 +1,34 @@
+# Boots the opinionated memory service. `docker compose up` is the only setup step.
+#
+# Default host port is 8080 (the contract default). For PARALLEL runs alongside
+# sibling implementations, override on the host without touching this file:
+#   HOST_PORT=8091 docker compose up --build
+services:
+  memory-service:
+    build: .
+    ports:
+      # host:container — override host port via HOST_PORT for parallel benches.
+      - "${HOST_PORT:-8080}:8080"
+    environment:
+      MEMORY_DATA_DIR: /data/pg
+      # "live" uses real Anthropic + OpenAI. The eval harness supplies the keys.
+      MEMORY_LLM: ${MEMORY_LLM:-live}
+      MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - memory-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 15
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  memory-data:

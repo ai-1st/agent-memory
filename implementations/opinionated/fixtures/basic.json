@@ -1,0 +1,150 @@
+{
+  "description": "Self-eval fixture for the opinionated memory service. Covers the spec's hard cases plus the design-specific CONTRADICTION case (likes oranges -> prefers apples, expecting the change to be narrated). Probe matching mirrors the bench harness: expect_any / expect_all / expect_empty over the lowercased recall context.",
+  "scenarios": [
+    {
+      "name": "relocation_and_implicit_pet",
+      "user_id": "fx-alice",
+      "turns": [
+        {
+          "session_id": "alice-s1",
+          "timestamp": "2025-03-01T10:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "I just moved to Berlin from NYC last month. Loving it so far."
+            },
+            { "role": "assistant", "content": "Berlin is great! How are you settling in?" }
+          ]
+        },
+        {
+          "session_id": "alice-s2",
+          "timestamp": "2025-03-05T09:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Took the morning off — was walking Biscuit by the canal."
+            },
+            { "role": "assistant", "content": "Sounds lovely. Biscuit is lucky!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Where does this user live now?",
+          "session_id": "alice-probe",
+          "expect_any": ["berlin"]
+        },
+        {
+          "query": "What is the user's dog's name?",
+          "session_id": "alice-probe",
+          "expect_any": ["biscuit"]
+        },
+        {
+          "query": "What city does the user with the dog named Biscuit live in?",
+          "session_id": "alice-probe",
+          "expect_all": ["berlin", "biscuit"]
+        }
+      ]
+    },
+    {
+      "name": "job_change_supersession",
+      "user_id": "fx-bob",
+      "turns": [
+        {
+          "session_id": "bob-s1",
+          "timestamp": "2025-01-10T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I work at Stripe as an engineer." },
+            { "role": "assistant", "content": "Nice, what do you work on?" }
+          ]
+        },
+        {
+          "session_id": "bob-s3",
+          "timestamp": "2025-03-20T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I just joined Notion as a PM." },
+            { "role": "assistant", "content": "Congrats on the new role!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Where does the user work?",
+          "session_id": "bob-probe",
+          "expect_any": ["notion"]
+        },
+        {
+          "query": "What is the user's current job?",
+          "session_id": "bob-probe",
+          "expect_any": ["notion"]
+        }
+      ]
+    },
+    {
+      "name": "preference_contradiction",
+      "user_id": "fx-carol",
+      "turns": [
+        {
+          "session_id": "carol-s1",
+          "timestamp": "2025-02-01T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Honestly I really like oranges, I eat them every morning."
+            },
+            { "role": "assistant", "content": "Citrus is a great way to start the day!" }
+          ]
+        },
+        {
+          "session_id": "carol-s2",
+          "timestamp": "2025-04-10T08:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "These days I prefer apples, oranges feel too acidic now."
+            },
+            { "role": "assistant", "content": "Apples are a solid choice." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Which fruit does the user prefer?",
+          "session_id": "carol-probe",
+          "expect_any": ["apple"]
+        },
+        {
+          "query": "Has the user's fruit preference changed over time?",
+          "session_id": "carol-probe",
+          "expect_all": ["apple", "orange"]
+        }
+      ]
+    },
+    {
+      "name": "noise_resistance_cold",
+      "user_id": "fx-dave",
+      "turns": [
+        {
+          "session_id": "dave-s1",
+          "timestamp": "2025-03-01T10:00:00Z",
+          "messages": [
+            { "role": "user", "content": "My name is Dave and I am allergic to shellfish." },
+            { "role": "assistant", "content": "Good to know, Dave." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "What is the user's favourite programming language?",
+          "session_id": "dave-probe",
+          "expect_empty": true
+        },
+        {
+          "query": "Does the user have any food allergies?",
+          "session_id": "dave-probe",
+          "expect_any": ["shellfish"]
+        }
+      ]
+    }
+  ]
+}
