@@ -5,17 +5,12 @@
 .env.*
 !.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
-# Node
+# Node / TypeScript
 node_modules/
+dist/
+*.tsbuildinfo
+.npm/
+coverage/
 
 # OS
 .DS_Store
@@ -25,5 +20,12 @@ data/
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
+
+# Bench artifacts
 bench/results/
-*.egg-info/
+
+# Python (legacy)
+__pycache__/
+*.pyc

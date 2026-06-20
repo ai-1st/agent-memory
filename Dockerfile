@@ -1,18 +1,23 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS base
 
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
+# --- deps: install production node_modules (with toolchain for native modules) ---
+FROM node:22-bookworm-slim AS deps
+WORKDIR /app
+# better-sqlite3 ships prebuilt binaries; keep a toolchain as a fallback.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+
+# --- runtime ---
+FROM node:22-bookworm-slim AS runtime
+ENV NODE_ENV=production \
     MEMORY_DB_PATH=/data/memory.db \
     PORT=8080
-
 WORKDIR /app
-
-# Install deps first for better layer caching.
-COPY pyproject.toml ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json tsconfig.json ./
 COPY src ./src
-RUN pip install --upgrade pip && pip install .
 
 # Persisted SQLite lives here; docker-compose mounts a named volume at /data.
 RUN mkdir -p /data
@@ -21,7 +26,6 @@ VOLUME ["/data"]
 EXPOSE 8080
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=10 --start-period=5s \
-    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health',timeout=2).status==200 else 1)"
+  CMD node -e "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
-# Factory pattern: no app is built at import time (see main.py).
-CMD ["uvicorn", "memory_service.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["npm", "start"]

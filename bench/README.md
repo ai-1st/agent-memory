@@ -1,20 +1,20 @@
 # Benchmark harness
 
-HTTP-only benchmark runner for comparing memory-service implementations/variants
+HTTP-only benchmark runner for comparing memory-service implementations/branches
 against each other. It talks to a running service over the contract endpoints, so
-it does not care how the service is built.
+it does not care how the service is built (TS or otherwise).
 
 ## Run
 
 ```bash
 # service running on :8080
-python bench/harness.py --label baseline
+npm run bench -- --label baseline
 
-# a variant on another port / host
-MEMORY_BASE=http://localhost:8081 python bench/harness.py --label llm-extract
+# a branch/variant on another port or host
+MEMORY_BASE=http://localhost:8081 npm run bench -- --label maxxed
 
 # compare every saved run
-python bench/harness.py --compare
+npm run bench -- --compare
 ```
 
 Results are written to `bench/results/<label>.json` and summarised as a table.
@@ -40,6 +40,7 @@ Point `--scenario` at any such file to benchmark a different dataset.
 
 ## Workflow
 
-This is the iteration loop: change a pipeline, re-run with a new `--label`, and
+This is the iteration loop: change a pipeline, re-run with a new `--label`, then
 `--compare` to see whether the number moved. Record meaningful jumps in
-[`../CHANGELOG.md`](../CHANGELOG.md).
+[`../CHANGELOG.md`](../CHANGELOG.md). The four implementations (`main` baseline +
+`impl/opinionated` + `impl/simple` + `impl/maxxed`) are compared this way.

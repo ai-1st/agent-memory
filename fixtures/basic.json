@@ -9,23 +9,41 @@
           "session_id": "alice-s1",
           "timestamp": "2025-03-01T10:00:00Z",
           "messages": [
-            {"role": "user", "content": "I just moved to Berlin from NYC last month. Loving it so far."},
-            {"role": "assistant", "content": "Berlin is great! How are you settling in?"}
+            {
+              "role": "user",
+              "content": "I just moved to Berlin from NYC last month. Loving it so far."
+            },
+            { "role": "assistant", "content": "Berlin is great! How are you settling in?" }
           ]
         },
         {
           "session_id": "alice-s2",
           "timestamp": "2025-03-05T09:00:00Z",
           "messages": [
-            {"role": "user", "content": "Took the morning off — was walking Biscuit by the canal."},
-            {"role": "assistant", "content": "Sounds lovely. Biscuit is lucky!"}
+            {
+              "role": "user",
+              "content": "Took the morning off — was walking Biscuit by the canal."
+            },
+            { "role": "assistant", "content": "Sounds lovely. Biscuit is lucky!" }
           ]
         }
       ],
       "probes": [
-        {"query": "Where does this user live now?", "session_id": "alice-probe", "expect_any": ["berlin"]},
-        {"query": "What is the user's dog's name?", "session_id": "alice-probe", "expect_any": ["biscuit"]},
-        {"query": "What city does the user with the dog named Biscuit live in?", "session_id": "alice-probe", "expect_all": ["berlin", "biscuit"]}
+        {
+          "query": "Where does this user live now?",
+          "session_id": "alice-probe",
+          "expect_any": ["berlin"]
+        },
+        {
+          "query": "What is the user's dog's name?",
+          "session_id": "alice-probe",
+          "expect_any": ["biscuit"]
+        },
+        {
+          "query": "What city does the user with the dog named Biscuit live in?",
+          "session_id": "alice-probe",
+          "expect_all": ["berlin", "biscuit"]
+        }
       ]
     },
     {
@@ -36,22 +54,30 @@
           "session_id": "bob-s1",
           "timestamp": "2025-01-10T12:00:00Z",
           "messages": [
-            {"role": "user", "content": "I work at Stripe as an engineer."},
-            {"role": "assistant", "content": "Nice, what do you work on?"}
+            { "role": "user", "content": "I work at Stripe as an engineer." },
+            { "role": "assistant", "content": "Nice, what do you work on?" }
           ]
         },
         {
           "session_id": "bob-s3",
           "timestamp": "2025-03-20T12:00:00Z",
           "messages": [
-            {"role": "user", "content": "I just joined Notion as a PM."},
-            {"role": "assistant", "content": "Congrats on the new role!"}
+            { "role": "user", "content": "I just joined Notion as a PM." },
+            { "role": "assistant", "content": "Congrats on the new role!" }
           ]
         }
       ],
       "probes": [
-        {"query": "Where does the user work?", "session_id": "bob-probe", "expect_any": ["notion"]},
-        {"query": "What is the user's current job?", "session_id": "bob-probe", "expect_any": ["notion"]}
+        {
+          "query": "Where does the user work?",
+          "session_id": "bob-probe",
+          "expect_any": ["notion"]
+        },
+        {
+          "query": "What is the user's current job?",
+          "session_id": "bob-probe",
+          "expect_any": ["notion"]
+        }
       ]
     },
     {
@@ -62,13 +88,17 @@
           "session_id": "carol-s1",
           "timestamp": "2025-02-01T08:00:00Z",
           "messages": [
-            {"role": "user", "content": "I'm vegetarian and allergic to shellfish."},
-            {"role": "assistant", "content": "Got it, I'll keep that in mind."}
+            { "role": "user", "content": "I'm vegetarian and allergic to shellfish." },
+            { "role": "assistant", "content": "Got it, I'll keep that in mind." }
           ]
         }
       ],
       "probes": [
-        {"query": "Any dietary restrictions?", "session_id": "carol-probe", "expect_any": ["vegetarian", "shellfish"]}
+        {
+          "query": "Any dietary restrictions?",
+          "session_id": "carol-probe",
+          "expect_any": ["vegetarian", "shellfish"]
+        }
       ]
     },
     {
@@ -76,7 +106,11 @@
       "user_id": "fixture-nobody",
       "turns": [],
       "probes": [
-        {"query": "What is the user's favorite Formula 1 team?", "session_id": "nobody-probe", "expect_empty": true}
+        {
+          "query": "What is the user's favorite Formula 1 team?",
+          "session_id": "nobody-probe",
+          "expect_empty": true
+        }
       ]
     }
   ]

@@ -9,21 +9,21 @@ repos:
       - id: check-added-large-files
       - id: check-yaml
       - id: check-json
-      - id: detect-private-key  # never commit a key/secret
+        exclude: ^tsconfig\.json$ # tsconfig allows comments (JSONC)
+      - id: detect-private-key # never commit a key/secret
 
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
-    hooks:
-      - id: ruff          # lint
-        args: [--fix]
-      - id: ruff-format   # format
-
-  # Local hook: every formal requirement of the assignment must hold.
+  # Local hooks use the project's own toolchain (node_modules must be installed).
   - repo: local
     hooks:
+      - id: biome
+        name: biome (lint + format)
+        entry: npx --no-install @biomejs/biome check --write
+        language: system
+        types_or: [ts, javascript, json]
+        pass_filenames: false
       - id: assignment-requirements
         name: assignment requirements check
-        entry: python scripts/check_requirements.py
+        entry: npx --no-install tsx scripts/check-requirements.ts
         language: system
         pass_filenames: false
         always_run: true

@@ -6,9 +6,9 @@ services:
       - "8080:8080"
     environment:
       MEMORY_DB_PATH: /data/memory.db
-      # Optional: switch the extraction pipeline. Default is the offline baseline.
+      # Default is the offline baseline; branches switch this to "llm".
       MEMORY_EXTRACTOR: ${MEMORY_EXTRACTOR:-baseline}
-      MEMORY_LLM_PROVIDER: ${MEMORY_LLM_PROVIDER:-openai}
+      MEMORY_RECALLER: ${MEMORY_RECALLER:-baseline}
       # Optional bearer token + LLM keys. Supplied by the eval harness / .env.
       MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -16,7 +16,11 @@ services:
     volumes:
       - memory-data:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health',timeout=2).status==200 else 1)"]
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       interval: 10s
       timeout: 3s
       retries: 10
