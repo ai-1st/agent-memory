@@ -16,6 +16,14 @@
     "lineWidth": 100
   },
   "files": {
-    "ignore": ["node_modules", "dist", "bench/results", "docs", "data", "coverage"]
+    "ignore": [
+      "node_modules",
+      "dist",
+      "bench/results",
+      "docs",
+      "data",
+      "coverage",
+      "implementations"
+    ]
   }
 }

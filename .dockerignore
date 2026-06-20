@@ -13,5 +13,6 @@ data
 *.db-wal
 bench/results
 docs
+implementations
 .claude
 *.tsbuildinfo
