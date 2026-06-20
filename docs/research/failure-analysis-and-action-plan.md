@@ -1,0 +1,73 @@
+# Failure analysis & improvement action plan
+
+What each implementation gets wrong, *why* (grounded in the benchmark judge notes
+and the source), and a per-implementation action plan that respects the design
+contract for each: **keep `simple` simple, keep `opinionated` true to its original
+idea, let `maxxed` grow new layers freely.**
+
+## Data sources
+
+Haiku 4.5 (post-bugfix), Opus judge. longmemeval **N=40**, ruler-niah **N=30**,
+contradiction **N=10**, LoCoMo **N=100**, adversarial **N=30**. Strict-floor
+(score≥0.8) available per card. LoCoMo for opinionated/maxxed and the adversarial
+run land in the **Appendix** as they complete; they *quantify* the modes below but
+don't change the diagnosis (the modes are already visible in the landed cards +
+source).
+
+## Cross-cutting failure taxonomy
+
+| # | Mode | Who | Evidence |
+|---|------|-----|----------|
+| **T1** | **Temporal arithmetic** — surfaces raw dates but doesn't compute durations / ordering / relative-date answers | all three | longmemeval fails are *almost entirely* `temporal`: simple 10/10, maxxed ~12, opinionated ~9. Notes: "implies two weeks but does not state it", "cannot derive 'five months ago'", "no purchase-order to determine which first". |
+| **T2** | **Retrieval coverage collapse on long multi-session** — relevant facts not pulled; speakers conflated | simple (worst) | LoCoMo simple **24%**, 76 fails: "Context contains no information about X", and attribution slips (Caroline's facts returned for Melanie). |
+| **T3** | **Empty recall on low-semantic needles** — LLM rerank/compaction drops a random-string hit → empty context | opinionated | ruler recall **5/6** fails are literally "Context is empty; no access code provided" (simple dumps candidates → 100%). |
+| **T4** | **Over-narration** — compaction asserts an ordering/resolution the facts don't support | opinionated | longmemeval "timeline section incorrectly…", "summary reaches the wrong conclusion"; contradiction control "claims Denver is finalized" (expected: undecided). |
+| **T5** | **Loses earlier values in A→B→C** — only the most-recent prior kept as a breadcrumb | simple, maxxed | source: `simple/src/recall.ts:192` & `maxxed/src/recall/recaller.ts:392` both `note += ; previously ${prior[0]}`. Quantified by adversarial `history_full`/`stale_trap` (Appendix). |
+| **T6** | **Weak abstention under distractors** — returns a near-miss instead of abstaining | maxxed | ruler `noise_abstention` 4 fails: "contains X5-QW77 which could be misinterpreted as an access code… does not clearly convey nothing is known". |
+| **T7** | **Multi-hop chaining** — second-hop entity not retrieved | all | ruler + LoCoMo `multihop`: "establishes the user is in Gaborone but does not name the SRE". |
+
+## Per-implementation
+
+### `simple` — keep it simple (surgical fixes only; no new subsystems)
+Failures: **T1** (temporal), **T2** (LoCoMo coverage), **T5** (prior[0]).
+- **T5 — one-liner:** join all priors instead of `prior[0]` → "previously Globex; before that Acme". Keeps the single-breadcrumb shape, recovers full history.
+- **T1 — extraction prompt tweak:** anchor relative dates to the turn timestamp *at ingest* ("about three weeks ago" → "around 2023-05-01"), so recall surfaces absolute dates a frozen LLM can compute with. No temporal engine added.
+- **T2 — widen + scope:** raise the recall candidate breadth (semantic limit) and scope facts by speaker/user so multi-speaker conversations don't conflate. A parameter + filter change, not a new layer.
+- **Explicitly NOT doing:** LLM reranker, entity graph. `simple` stays the transparent dump-with-triage design.
+
+### `opinionated` — stay true to the original idea (linked contradictions + LLM rerank/compaction)
+Failures: **T3** (empty recall), **T4** (over-narration), **T1** (temporal).
+- **T3 — retention guard:** never let the LLM compaction zero out a clear hit. If a candidate has a high embedding similarity *or* exact-substring match to the query but the LLM returns empty/!selected, include it via the existing deterministic fallback. Keeps LLM-as-reranker; adds a safety net (same class as the recall fallback already there).
+- **T4 — tighten the narration prompt:** narrate only what the dated facts state; never assert an ordering or a *resolution* not supported by a fact. For contradictions, narrate the tension as **unresolved** unless an explicit resolution fact exists (directly fixes the "Denver finalized" control miss while keeping the narration identity).
+- **T1 — shared date-anchoring** (below).
+- **Keep:** the CONTRADICT link graph + tension narration — that's the design's whole point.
+
+### `maxxed` — free to add layers
+Failures: **T1** (temporal), **T6** (abstention), **T7** (multi-hop), **T5** (prior[0]).
+- **T1 — temporal layer:** anchor relative dates at ingest *and* add a recall step that computes durations/ordering when the query is temporal.
+- **T6 — abstention gate:** an explicit "does any retrieved fact actually answer this?" check before returning, to suppress lexically-near distractors.
+- **T7 — multi-hop expansion:** when the query names an entity, expand retrieval to facts about the linked entity (1–2 hops) before reranking.
+- **T5 — full history:** join all priors / surface superseded rows on demand.
+
+## Shared opportunity
+**Date-anchoring at extraction (T1)** is the single highest-leverage fix — it's the
+dominant longmemeval failure for *all three* builds. Implement the prompt pattern
+once and adopt it in each extractor. It's "simple-safe" (prompt-only) so even
+`simple` can take it without violating its contract.
+
+## Priority (by impact × effort)
+1. **T1 date-anchoring** — biggest accuracy lever, prompt-only, all three builds.
+2. **T3 opinionated retention guard** — turns 5 empty ruler recalls into hits.
+3. **T5 all-priors breadcrumb** — one-liner in simple & maxxed.
+4. **T2 simple coverage** — the LoCoMo floor; param + speaker scoping.
+5. **T6 / T7 maxxed layers** — abstention gate, multi-hop expansion.
+6. **T4 opinionated narration discipline** — prompt tightening.
+
+## Appendix — results landing as runs complete
+- LoCoMo (N=100): baseline **15%** → simple **24%** → maxxed **26%** →
+  opinionated **27%**. LLM builds cluster ~10–12 pts over the floor; 73 pts of
+  headroom remain — this is where the improvement work should be measured.
+- Adversarial (N=30): _running_ — baseline 20%, simple 63% so far (it
+  discriminates). Per-category breakdown (quantifying T5 `history_full`/`stale_trap`,
+  T6 `abstain_distractor`, T3 `leak_control`, T7 `multihop_decoy`) lands when the
+  LLM builds finish.
