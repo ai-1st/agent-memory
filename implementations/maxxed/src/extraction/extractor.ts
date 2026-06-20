@@ -67,13 +67,16 @@ export class Extractor {
   }
 
   /** Step 1: LLM (or rule-shadow) candidate extraction. */
-  private async extractCandidates(userText: string): Promise<CandidateMemory[]> {
+  private async extractCandidates(
+    userText: string,
+    timestamp: string | null,
+  ): Promise<CandidateMemory[]> {
     if (!userText.trim()) return [];
     try {
       const res = await this.llm.generateObject({
         schema: extractionResultSchema,
         system: EXTRACT_SYSTEM,
-        prompt: buildExtractPrompt(userText),
+        prompt: buildExtractPrompt(userText, timestamp),
         purpose: "extract",
       });
       return res.memories;
@@ -133,7 +136,7 @@ export class Extractor {
   /** Full pipeline for one turn. Returns the memories that landed. */
   async extract(messages: Message[], ctx: ExtractContext): Promise<AppliedMemory[]> {
     const userText = this.userText(messages);
-    const candidates = await this.extractCandidates(userText);
+    const candidates = await this.extractCandidates(userText, ctx.timestamp);
     if (candidates.length === 0) return [];
 
     // Embed all candidate values in one batch (one network round-trip).

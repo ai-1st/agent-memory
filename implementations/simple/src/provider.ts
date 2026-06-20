@@ -85,7 +85,7 @@ const extractionSchema = z.object({
 
 export interface Provider {
   readonly name: string;
-  extract(messages: Message[]): Promise<ExtractedMemory[]>;
+  extract(messages: Message[], timestamp: string | null): Promise<ExtractedMemory[]>;
   /** `phase` is the CSV audit call-site label (embed_query, embed_memory, ...). */
   embed(text: string, phase?: string): Promise<number[]>;
   embedBatch(texts: string[], phase?: string): Promise<number[][]>;
@@ -107,6 +107,7 @@ Rules:
 - type: fact (objective), preference (likes/dislikes/habits), opinion (subjective stance that may evolve), event (a dated happening).
 - mutable=true when a newer statement should replace the old value (job, location, current opinion). mutable=false for additive facts that accumulate (allergies, distinct pets, distinct family members).
 - confidence: 0.9+ for explicit first-person statements, ~0.6 for implicit/inferred.
+- DATES: the turn's timestamp is given below. Resolve every relative time expression to an absolute date using it — "last Saturday", "three weeks ago", "yesterday", "this morning" => an explicit YYYY-MM-DD. For event facts, put the absolute date IN the value (e.g. "User went hiking on 2023-05-13", not "User went hiking last Saturday"). Never store a bare relative expression; a later reader has no access to the turn timestamp.
 - Prefer precision. If nothing durable was said, return an empty list.`;
 
 /**
@@ -141,13 +142,14 @@ export class LiveProvider implements Provider {
     });
   }
 
-  async extract(messages: Message[]): Promise<ExtractedMemory[]> {
+  async extract(messages: Message[], timestamp: string | null): Promise<ExtractedMemory[]> {
     const transcript = messages
       .map((m) => `${m.role}${m.name ? `(${m.name})` : ""}: ${m.content}`)
       .join("\n");
     if (!transcript.trim()) return [];
 
-    const prompt = `Conversation turn:\n${transcript}`;
+    const when = timestamp ? `Turn timestamp: ${timestamp}\n\n` : "Turn timestamp: (unknown)\n\n";
+    const prompt = `${when}Conversation turn:\n${transcript}`;
     const started = Date.now();
     const { object, usage } = await generateObject({
       model: this.anthropic(LLM_MODEL),
@@ -378,7 +380,7 @@ const RULES: Array<{
 export class MockProvider implements Provider {
   readonly name = "mock";
 
-  async extract(messages: Message[]): Promise<ExtractedMemory[]> {
+  async extract(messages: Message[], _timestamp: string | null): Promise<ExtractedMemory[]> {
     // Offline: no tokens are actually spent. Record the call with zero usage so
     // the /metrics call counters still tick (the harness/tests can observe a
     // turn happened) without inventing token spend.

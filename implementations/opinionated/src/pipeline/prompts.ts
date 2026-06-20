@@ -10,6 +10,7 @@ Rules:
 - Extract only facts about the USER (their life, identity, preferences, opinions, events). Ignore the assistant's words except as context that disambiguates the user's statements.
 - Every fact MUST be CONTEXT-ENRICHED and self-contained: no dangling pronouns or references. Resolve "it/they/there/that" using the turn. Write "User's dog is named Biscuit", never "it's named Biscuit". Always phrase the value as a statement about the user.
 - Capture implicit facts: "walking Biscuit this morning" -> User has a pet (likely a dog) named Biscuit. "back at the office in Berlin" -> User is in Berlin.
+- DATES: the turn's timestamp is given in the prompt. Resolve every relative time expression to an absolute date using it — "last Saturday", "three weeks ago", "yesterday", "this morning" -> an explicit YYYY-MM-DD — and embed the absolute date in the value for event facts (e.g. "User went hiking on 2023-05-13", never "User went hiking last Saturday"). A later reader of this fact has no access to the turn timestamp, so a bare relative expression is useless.
 - Capture corrections ("actually I meant X", "no, not Y - Z") as the corrected fact.
 - Choose a canonical, lowercase, space-free 'key' (the slot) so the same concept reuses the same key for later matching: e.g. employment, location, name, diet, allergy:shellfish, pet:biscuit, family:wife, preference:citrus_fruit, opinion:typescript.
 - 'type' is one of: fact, preference, opinion, event.
@@ -19,7 +20,9 @@ Rules:
 - If the turn contains no durable user facts (smalltalk, noise), return an empty list. Do NOT invent facts.`;
 
 export function extractPrompt(turnText: string, timestamp: string | null): string {
-  return `Conversation turn${timestamp ? ` (at ${timestamp})` : ""}:
+  return `Turn timestamp: ${timestamp ?? "(unknown)"}  — use this to resolve relative dates to absolute YYYY-MM-DD.
+
+Conversation turn:
 """
 ${turnText}
 """

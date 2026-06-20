@@ -11,14 +11,16 @@ Rules:
 - mutable: true if the slot holds ONE current value (employment, location, diet) so a new value supersedes the old. false if multiple values coexist (allergies, pets, hobbies).
 - entities: lowercase canonical tokens for graph linking (names, places, orgs, breeds), e.g. ["biscuit","corgi"].
 - value: a terse human-readable statement, e.g. "Notion as a PM", "New York City", "allergic to shellfish".
+- DATES: the turn's timestamp is provided. Resolve every relative time expression to an absolute date using it — "last Saturday", "three weeks ago", "yesterday" => an explicit YYYY-MM-DD — and put the absolute date IN the value for event facts (e.g. "went hiking on 2023-05-13", not "went hiking last Saturday"). Never store a bare relative expression; a later reader has no access to the turn timestamp.
 - confidence: a number between 0 and 1 (NOT a percentage).
 Output STRICT JSON matching the schema and nothing else (no prose, no markdown fences). Every memory MUST include all fields: type, key, value, confidence, mutable, snippet, entities. Use exactly one of the lowercase type values: fact, preference, opinion, event. If there are no entities, use an empty array []. If a source phrase isn't obvious, set snippet to the value.
 Example of one well-formed memory:
 {"type":"fact","key":"employment","value":"Notion as a PM","confidence":0.9,"mutable":true,"snippet":"I just joined Notion as a PM","entities":["notion","pm"]}
 Return {"memories": []} if the turn contains no durable user facts.`;
 
-export function buildExtractPrompt(userText: string): string {
-  return `Extract memories from this turn.\n\n<USER_TEXT>\n${userText}\n</USER_TEXT>`;
+export function buildExtractPrompt(userText: string, timestamp?: string | null): string {
+  const when = `Turn timestamp: ${timestamp ?? "(unknown)"}\n\n`;
+  return `${when}Extract memories from this turn.\n\n<USER_TEXT>\n${userText}\n</USER_TEXT>`;
 }
 
 export const RECONCILE_SYSTEM = `You decide how a newly-extracted candidate memory relates to the user's EXISTING memories for the same slot.

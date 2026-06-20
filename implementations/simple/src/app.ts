@@ -111,7 +111,7 @@ export async function createApp(
     // Extraction + per-memory embedding. Failures must not fail the write — the
     // turn is already persisted and recoverable via /search and recent turns.
     try {
-      const extracted = await provider.extract(req.messages);
+      const extracted = await provider.extract(req.messages, req.timestamp ?? null);
       for (const em of extracted) {
         let memEmbedding: number[] | null = null;
         try {
