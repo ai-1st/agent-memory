@@ -155,3 +155,20 @@ Two ideas explored on top of date-anchoring (42%), via a 4-way A/B sweep:
 → 42% (anchoring) → 57% (coverage prompt + wider recall) → **67% (chunked extraction)**,
 clearing the ~60% target. Coverage — getting the fact into the store and into the
 candidate set — is the dominant lever on LoCoMo, exactly as the residual analysis predicted.
+
+## Per-build improvement iterations (LoCoMo, Haiku N=100)
+
+Goal: 3 iterations per build, benchmarked + committed each. Key cross-build lesson:
+**coverage (more extracted facts) helps only builds with a reranker that triages a
+budget-capped context.** It backfires where the build dumps facts without reranking.
+
+| build | baseline (anchored) | iter-1 | lever | verdict |
+|---|---|---|---|---|
+| **opinionated** | 42% | **67%** | chunked extraction (default-on) | **+25 win** — has an LLM reranker; coverage pays off |
+| **simple** | 30% | 24% → reverted | exhaustive extraction | **backfired** (−6): no reranker, dumps a budget-capped context, so more facts crowd out the needle. Kept the all-priors breadcrumb; iter-2 pivots to SELECTION quality (date boost + stable-budget cap) |
+| **maxxed** | 23% | 22% | exhaustive extraction | **flat**: maxxed retrieves only top-K=20 and never "always includes all facts", so extracting more didn't reach recall. iter-2 = chunked extraction + RETRIEVE_K 20→50 (widen the pool the reranker sees) |
+
+The pattern confirms the diagnosis: on LoCoMo the gate is **getting the right fact
+into the candidate set the reranker scores**. opinionated already includes all stable
+facts + links + wide semantic recall, so chunked extraction (more facts in the store)
+converts directly. maxxed/simple needed their retrieval/selection widened first.
