@@ -35,6 +35,42 @@ root baseline.
 
 ---
 
+## v2 — Benchmark suite (LongMemEval / LoCoMo / RULER-NIAH / custom)
+
+**What changed:** Built a reusable suite ([`bench/suite/`](bench/suite)) — a
+normalized Scenario format + Opus-judged runner computing the mem0 three-axis card
+(accuracy-by-category / tokens-per-recall / p50–p95 latency). Adapters: LongMemEval
+(real `oracle`, 500 instances), LoCoMo (real `locomo10.json`, CC BY-NC), RULER/NIAH
+(deterministic length-scalable generator), and custom (the assignment scenarios).
+Developed via parallel background agents; datasets stay git-ignored. Added
+[`scripts/run-suite.sh`](scripts/run-suite.sh), which runs every benchmark × all
+four implementations as **concurrent** sequences (collapses the LLM phase to the
+slowest build instead of the sum).
+
+**Why:** the v1 comparison used a 12-probe custom fixture only — too small to
+separate the LLM builds. The suite adds real long-memory datasets + a synthetic
+volume/noise generator, scored like the private eval, across the rubric categories.
+
+**Result** (bounded subset; full table: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)):
+the baseline floor is genuinely low on realistic data — **LoCoMo 10%, LongMemEval
+45%** (vs ~ms latency) — which is the argument for the LLM builds. On the tractable
+subset, **simple** and **maxxed** lead; **opinionated** matches on custom/longmemeval
+but has the heaviest ingest. Cost shapes: opinionated costliest ingest (~16–24 s/turn,
+p95 ~47 s), maxxed costliest recall (~7–9 s, p95 ~41 s), simple the balance.
+
+**Validity (checked + documented, NOT fixed per direction):** no rate limiting
+(0 throttle signatures, 0 judge errors). Two real bugs found and left as caveats —
+`opinionated` 3× HTTP 500 (`TypeError ... reading 'value'`) which voids its
+ruler-niah number (empty recall), and `maxxed` 5× extraction schema-mismatch →
+silent rule fallback (mild understatement). LoCoMo is **baseline-only** here
+(full-conversation LLM ingestion is a separate long batch). Small N on the LLM
+longmemeval/ruler runs.
+
+**Next:** fix the two bugs; run LoCoMo (and larger N) against the LLM builds for a
+clean comparison; then decide which design to promote.
+
+---
+
 ## v1 — Three explorations built + shared LLM-judged comparison
 
 **What changed:** Built all three explorations as self-contained, docker-deployable
