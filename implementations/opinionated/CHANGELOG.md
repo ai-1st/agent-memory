@@ -4,6 +4,43 @@ The design story, newest first. Each entry: what changed, why, what I observed.
 
 ---
 
+## v7 — Winning LoCoMo: date-anchoring → coverage → chunked extraction (27→67%)
+
+**What changed:** A focused campaign to lift the realistic long-conversation
+benchmark (LoCoMo), where the build started at 27% (75% of probes failing). Each
+lever was benchmarked (Haiku, N=100) before keeping it.
+
+1. **Date-anchoring at extraction.** The turn timestamp now flows into extraction
+   and the model resolves "last Saturday" → an absolute `YYYY-MM-DD` baked into the
+   value. *Why:* recall and the judge see only the stored fact, not the turn clock —
+   a bare relative date is unanswerable. Temporal 16→46, overall 27→42.
+2. **Coverage is the dominant lever.** The residual failures were "no record of X
+   documented" — the fact was never extracted or never retrieved, not mis-reasoned.
+   An exhaustive-extraction instruction + wider recall (semantic 12→24, recent 8→12)
+   took it 42→57.
+3. **Chunked extraction (the winner).** For long multi-message turns, extract from
+   each focused message-window AND the whole turn, then semantic-dedup the
+   candidates (a small window surfaces one-off details the single 20-message pass
+   drops). 57→**67%**, now default-on. This pairs with the per-fact reconcile, which
+   absorbs the extra candidates.
+4. **Multi-query retrieval — explored, measured to NOT help.** An LLM proposes
+   follow-up queries from the first-round facts and merges results. On LoCoMo: 55 vs
+   57 — the wider recall already covers it; the extra call is cost+noise. Kept
+   env-gated off (`MEMORY_MULTI_QUERY`). A clean negative result, not dead code.
+5. **Temporal narration discipline (iter-2).** Recall now surfaces exact dates
+   verbatim and states order/interval when two dated facts are relevant.
+
+**Why this fits the build's identity:** every change rides on the existing
+extract → per-fact reconcile → LLM-rerank/compaction spine. The reranker is exactly
+what lets coverage pay off (it triages the larger candidate set to budget) — the
+same lever *backfired* on the reranker-less `simple` build.
+
+**Observed:** LoCoMo 27 → 42 → 57 → 67. Temporal 16→46, multi-hop 13→34. The
+coverage thesis — get the fact into the candidate set the reranker scores — is the
+whole game on long multi-session data.
+
+---
+
 ## v6 — Make `reason` earn its keep (CoT + narrated contradictions)
 
 **What changed:** The per-op `reason` field in the reconcile schema used to sit
