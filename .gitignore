@@ -32,3 +32,6 @@ __pycache__/
 
 # Local-only: the assignment brief (kept on disk, not tracked)
 ASSIGNMENT.md
+
+# Downloaded benchmark datasets (large; not tracked)
+bench/data/
