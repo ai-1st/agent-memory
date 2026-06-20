@@ -134,3 +134,24 @@ some judge-debatable). So Lever 2 is **denser extraction on long sessions + wide
 recall**, focused on **opinionated** (the build that responds to the levers and is
 approved to develop as-is). Honest ceiling unchanged: ~55–65% is a strong target;
 <20% failure remains a stretch given cat3 subjectivity + extraction limits.
+
+## Lever-2/3 results — coverage sweep (opinionated, LoCoMo N=100, Haiku)
+
+Two ideas explored on top of date-anchoring (42%), via a 4-way A/B sweep:
+- **multi-query retrieval** (recall-side): LLM proposes follow-up queries from the
+  first-round facts, merges results.
+- **chunked extraction** (ingest-side): extract from each focused message-chunk AND
+  the whole turn, then semantic-dedup the candidates.
+
+| config | LoCoMo | vs base | verdict |
+|---|---|---|---|
+| base (Lever-2: exhaustive prompt + wider recall) | **57%** | — | the wider-recall + exhaustive-extraction prompt alone is +15 over Lever-1 (42%) |
+| + multi-query | 55% | −2 | **no help** — Lever-2's wider recall already pulls what the extra queries would; the added LLM call is cost+noise |
+| **+ chunked extraction** | **67%** | **+10** | **the winner** — a focused window surfaces one-off details the single long pass drops (the dominant coverage residual) |
+| + both | 66% | +9 | chunk's gain; mq still adds nothing |
+
+**Decisions:** opinionated adopts **chunked extraction ON by default**, multi-query
+**off** (kept env-gated for experimentation). Net opinionated LoCoMo: 27% (pre-anchor)
+→ 42% (anchoring) → 57% (coverage prompt + wider recall) → **67% (chunked extraction)**,
+clearing the ~60% target. Coverage — getting the fact into the store and into the
+candidate set — is the dominant lever on LoCoMo, exactly as the residual analysis predicted.
