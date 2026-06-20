@@ -1,0 +1,129 @@
+{
+  "description": "Recall-quality fixture for the 'simple' memory service. Each scenario is a sequence of conversation turns ingested in order, followed by probe queries whose expected facts must surface in /recall context. Designed to be runnable offline with the deterministic mock provider, so the regex extractor must be able to lift every expected fact. Probes cover the categories the assignment calls out: relocation, implicit pet, job-change supersession, multi-hop, and a cold-user noise probe.",
+  "scenarios": [
+    {
+      "name": "relocation",
+      "user_id": "fx_reloc",
+      "turns": [
+        {
+          "session_id": "fx_reloc_s1",
+          "timestamp": "2026-01-05T10:00:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Hey, I just moved to Berlin from NYC last month and I'm loving it."
+            },
+            { "role": "assistant", "content": "Berlin is wonderful! How is the move treating you?" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Where does this user live now?",
+          "session_id": "fx_reloc_probe",
+          "expect_any": ["Berlin"],
+          "expect_not": []
+        }
+      ]
+    },
+    {
+      "name": "implicit_pet",
+      "user_id": "fx_pet",
+      "turns": [
+        {
+          "session_id": "fx_pet_s1",
+          "timestamp": "2026-02-10T08:30:00Z",
+          "messages": [
+            {
+              "role": "user",
+              "content": "Sorry I'm late, I was out walking Biscuit this morning before the rain."
+            },
+            { "role": "assistant", "content": "No worries! Hope Biscuit enjoyed the walk." }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Does the user have a pet, and what is its name?",
+          "session_id": "fx_pet_probe",
+          "expect_any": ["Biscuit"],
+          "expect_not": []
+        }
+      ]
+    },
+    {
+      "name": "job_change_supersession",
+      "user_id": "fx_job",
+      "turns": [
+        {
+          "session_id": "fx_job_s1",
+          "timestamp": "2026-01-15T09:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I work at Stripe as an engineer." },
+            { "role": "assistant", "content": "Nice, Stripe does great work." }
+          ]
+        },
+        {
+          "session_id": "fx_job_s3",
+          "timestamp": "2026-03-20T09:00:00Z",
+          "messages": [
+            { "role": "user", "content": "Big news — I just joined Notion as a product manager." },
+            { "role": "assistant", "content": "Congratulations on the new role at Notion!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "Where does the user work right now?",
+          "session_id": "fx_job_probe",
+          "expect_any": ["Notion"],
+          "expect_not": []
+        }
+      ]
+    },
+    {
+      "name": "multi_hop",
+      "user_id": "fx_hop",
+      "turns": [
+        {
+          "session_id": "fx_hop_s1",
+          "timestamp": "2026-02-01T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "My dog is named Biscuit and he's a golden retriever." },
+            { "role": "assistant", "content": "Golden retrievers are lovely." }
+          ]
+        },
+        {
+          "session_id": "fx_hop_s2",
+          "timestamp": "2026-02-02T12:00:00Z",
+          "messages": [
+            { "role": "user", "content": "I live in Lisbon now, the weather here is amazing." },
+            { "role": "assistant", "content": "Lisbon is a beautiful city!" }
+          ]
+        }
+      ],
+      "probes": [
+        {
+          "query": "What city does the user with the dog named Biscuit live in?",
+          "session_id": "fx_hop_probe",
+          "expect_any": ["Lisbon"],
+          "expect_not": []
+        }
+      ]
+    },
+    {
+      "name": "cold_user_noise",
+      "user_id": "fx_cold",
+      "comment": "A genuinely cold user: nothing was ever ingested for fx_cold. A query about an undiscussed topic must return EMPTY context, never a hallucinated memory. This is the true noise-resistance case the spec describes ('Queries about topics never discussed. Service should return empty context, not hallucinated memories.'). Note: by design, stable profile facts for a KNOWN user are always surfaced (they are low-volume, high-value, and power multi-hop); noise resistance applies to undiscussed topics and to off-topic episodic/recent content, which is gated by a relevance floor.",
+      "turns": [],
+      "probes": [
+        {
+          "query": "What is the user's opinion on quantum computing hardware vendors?",
+          "session_id": "fx_cold_probe",
+          "expect_any": [],
+          "expect_not": ["quantum", "computing", "vendors", "opinion"]
+        }
+      ]
+    }
+  ]
+}
