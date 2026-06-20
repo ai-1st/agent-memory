@@ -35,6 +35,37 @@ root baseline.
 
 ---
 
+## v4 — Robust, resumable, parallel bench harness
+
+**What changed:** Reworked the suite runner (`bench/suite/runner.ts` + `run.ts`)
+so a multi-hour run survives a kill and uses the LLM rate budget efficiently.
+Motivated by a real incident: a long background run got SIGTERM'd mid-benchmark
+and lost everything, because the old runner ingested-then-probed-then-wrote one
+card only at the very end.
+
+- **Resume via JSONL journal.** Every completed ingest and every judged probe is
+  appended to `bench/results/suite/journals/<adapter>__<label>.jsonl` as it
+  happens. `--resume` loads the journal, verifies the user still has data, and
+  skips finished work — a relaunch continues instead of restarting. The journal
+  is also the progress log, and a partial card can be rebuilt from it. Validated
+  end-to-end: a resume run skipped all completed probes and made **0** new judge
+  calls.
+- **Parallelism with a cap.** Ingestion runs concurrently across scenarios
+  (independent users; turns stay sequential within a user for supersession
+  order), and probes run concurrently — both under `SUITE_CONCURRENCY` (default
+  5) to stay under provider rate limits.
+- **Retry/backoff.** `httpRetry` retries transient 429/529/network failures with
+  quadratic backoff; non-idempotent `/turns` only retries on explicit rejections
+  (429/529), never on an ambiguous network error, to avoid double-ingest.
+- **Cost across resume.** The pre-run metrics baseline is journaled, so cost is a
+  true full-run delta even after a resume (with a counter-reset guard).
+
+**Why:** the harness is now safe to run unattended for hours and cheap to
+re-drive after an interruption — a prerequisite for the larger discriminating
+runs (LoCoMo on the LLM builds, adversarial probes, higher N).
+
+---
+
 ## v3 — Full matrix re-run (bugs fixed), Haiku vs Opus, model-aware cost, contradiction fixture
 
 **What changed:**

@@ -28,6 +28,9 @@ async function main(): Promise<void> {
   const label = arg("label", "run") as string;
   const limitStr = arg("limit");
   const limit = limitStr ? Number.parseInt(limitStr, 10) : undefined;
+  const resume = process.argv.includes("--resume");
+  const concStr = arg("concurrency");
+  const concurrency = concStr ? Number.parseInt(concStr, 10) : undefined;
   if (!name) {
     process.stderr.write("error: --adapter <name> is required\n");
     process.exit(2);
@@ -46,14 +49,19 @@ async function main(): Promise<void> {
     `loaded ${scenarios.length} scenarios / ${scenarios.reduce((n, s) => n + s.probes.length, 0)} probes from ${name}\n`,
   );
 
-  const card = await runScenarios(url, scenarios, name, label);
+  const outDir = join(REPO, "bench", "results", "suite");
+  const journalPath = join(outDir, "journals", `${name}__${label}.jsonl`);
+  const card = await runScenarios(url, scenarios, name, label, {
+    resume,
+    concurrency,
+    journalPath,
+  });
   printCard(card);
 
-  const outDir = join(REPO, "bench", "results", "suite");
   mkdirSync(outDir, { recursive: true });
   const out = join(outDir, `${name}__${label}.json`);
   writeFileSync(out, JSON.stringify(card, null, 2));
-  process.stderr.write(`\nwrote ${out}\n`);
+  process.stderr.write(`\nwrote ${out}  (journal: ${journalPath})\n`);
 }
 
 main().catch((e) => {

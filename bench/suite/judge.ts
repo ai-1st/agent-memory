@@ -74,6 +74,27 @@ export async function http(
   }
 }
 
+/**
+ * http() with bounded retry + quadratic backoff on transient failures
+ * (429 rate-limit, 529 overloaded, 0 network error). For non-idempotent calls
+ * (POST /turns) pass retryOn=[429, 529] to avoid re-sending on an ambiguous
+ * network error; reads/deletes can retry on 0 too.
+ */
+export async function httpRetry(
+  method: string,
+  url: string,
+  body?: unknown,
+  opts: { retries?: number; timeoutMs?: number; retryOn?: number[] } = {},
+): Promise<{ status: number; body: any; ms: number }> {
+  const { retries = 2, timeoutMs = 65000, retryOn = [429, 529, 0] } = opts;
+  let last = await http(method, url, body, timeoutMs);
+  for (let a = 0; a < retries && retryOn.includes(last.status); a++) {
+    await new Promise((r) => setTimeout(r, 800 * (a + 1) * (a + 1)));
+    last = await http(method, url, body, timeoutMs);
+  }
+  return last;
+}
+
 export function pctl(xs: number[], p: number): number {
   if (xs.length === 0) return 0;
   const s = [...xs].sort((a, b) => a - b);
