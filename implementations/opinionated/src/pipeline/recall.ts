@@ -34,8 +34,8 @@ import { queryExpansionSchema, recallPlanSchema } from "./schemas";
 // failure is "relevant fact not retrieved", so pull more neighbours + recent
 // turns. The LLM reranker still triages down to the budget, so breadth costs
 // recall tokens, not answer quality.
-const SEMANTIC_LIMIT = 24;
-const RECENT_TURN_LIMIT = 12;
+const SEMANTIC_LIMIT = 32; // iter-3: wider candidate pool (the reranker triages it)
+const RECENT_TURN_LIMIT = 16;
 const STABLE_TYPES = new Set(["fact", "preference", "opinion"]);
 
 // Multi-query retrieval (experimental, env-gated MEMORY_MULTI_QUERY=1): after the

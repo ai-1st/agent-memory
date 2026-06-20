@@ -37,7 +37,7 @@ const SIMILAR_LIMIT = 6;
 // biggest lever (base 57% -> +chunk 67%); multi-query added nothing (55%). Set
 // MEMORY_CHUNK_EXTRACT=0 to disable.
 const CHUNK_EXTRACT = !/^(0|false|off)$/i.test(process.env.MEMORY_CHUNK_EXTRACT ?? "1");
-const CHUNK_SIZE = 6; // messages per focused chunk
+const CHUNK_SIZE = 4; // messages per focused chunk (iter-3: smaller = more focused)
 const CHUNK_MIN_MESSAGES = 8; // only chunk turns larger than this
 const DEDUP_COSINE = 0.94; // candidates at least this similar are the same fact
 
