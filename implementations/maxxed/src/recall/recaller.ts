@@ -322,8 +322,10 @@ export class HybridRecaller implements Recaller {
       });
       const scoreById = new Map(res.ranking.map((r) => [r.id, r.relevance]));
       for (const c of head) c.rerank = scoreById.get(c.row.id) ?? 0;
-      // Blend rerank with fused signal so a strong retriever isn't fully overridden.
-      head.sort((a, b) => combined(b) - combined(a));
+      // Blend rerank with fused signal so a strong retriever isn't fully overridden;
+      // boost dated facts on temporal queries.
+      const isTemporal = TEMPORAL_RE.test(query);
+      head.sort((a, b) => combined(b, isTemporal) - combined(a, isTemporal));
       return head;
     } catch {
       return head;
@@ -356,13 +358,14 @@ export class HybridRecaller implements Recaller {
         ? await this.store.memoriesAsOf(userId, asOf)
         : await this.store.listMemories(userId, true)
       : [];
+    const isTemporal = TEMPORAL_RE.test(query);
     const rankedIds = new Map(ranked.map((c) => [c.row.id, c]));
     const stable = allActive
       .filter((m) => STABLE_TYPES.has(m.type))
       .map((m) => ({ m, rel: rankedIds.get(m.id) }))
       .sort((a, b) => {
-        const ra = Math.max(a.rel ? combined(a.rel) : 0, lexRel(a.m));
-        const rb = Math.max(b.rel ? combined(b.rel) : 0, lexRel(b.m));
+        const ra = Math.max(a.rel ? combined(a.rel, isTemporal) : 0, lexRel(a.m));
+        const rb = Math.max(b.rel ? combined(b.rel, isTemporal) : 0, lexRel(b.m));
         if (rb !== ra) return rb - ra;
         if (b.m.importance !== a.m.importance) return b.m.importance - a.m.importance;
         return b.m.updated_at.localeCompare(a.m.updated_at);
@@ -473,10 +476,20 @@ export class HybridRecaller implements Recaller {
   }
 }
 
-function combined(c: MemCandidate): number {
+// Temporal queries hinge on a dated fact; those are usually `event` type and get
+// out-ranked by stable profile facts. On a temporal query, boost candidates whose
+// value carries an absolute date so they survive the rank-then-truncate budget.
+const TEMPORAL_RE =
+  /\b(when|what year|what month|date|day|before|after|ago|first|last|earlier|recently|since|until|during|how long)\b/i;
+const DATE_RE = /\b(19|20)\d{2}\b/;
+const TEMPORAL_BOOST = 0.25;
+
+function combined(c: MemCandidate, isTemporal = false): number {
   // Blend LLM rerank (precision) with RRF fused rank (recall robustness).
   const r = c.rerank ?? 0;
-  return 0.7 * r + 0.3 * Math.min(1, c.fused * 20);
+  const base = 0.7 * r + 0.3 * Math.min(1, c.fused * 20);
+  const boost = isTemporal && DATE_RE.test(c.row.value) ? TEMPORAL_BOOST : 0;
+  return base + boost;
 }
 
 function unique(xs: string[]): string[] {
