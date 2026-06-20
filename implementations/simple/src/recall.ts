@@ -37,6 +37,11 @@ import { estimateTokens } from "./tokens";
 
 const ALPHA = 0.6; // weight on the semantic signal in the fused score.
 const RELEVANCE_FLOOR = 0.12; // fused-score gate for episodic/recent items (noise resistance).
+const TEMPORAL_RE =
+  /\b(when|what year|what month|date|day|before|after|ago|first|last|earlier|recently|since|until|during|how long)\b/i;
+const DATE_RE = /\b(19|20)\d{2}\b/; // an absolute year — a dated fact
+const TEMPORAL_BOOST = 0.2; // score bump for dated facts on a temporal query
+const STABLE_BUDGET_SHARE = 0.6; // cap stable facts to leave room for dated events
 const STABLE_TYPES = new Set(["fact", "preference"]);
 const HEADER_FACTS = "## Known facts about this user";
 const HEADER_RECENT = "## Relevant from recent conversations";
@@ -68,16 +73,24 @@ export class Recaller {
     const qset = tokenSet(query);
     const kw = (text: string): number => keywordOverlap(qset, text);
 
+    // Temporal queries hinge on a DATED fact, but those are usually `event` type
+    // (episodic) and get crowded out below the always-on stable facts. When the
+    // query is temporal, boost memories that carry an absolute date so they rank
+    // into the tight budget. Selection-quality fix (simple has no reranker).
+    const isTemporal = TEMPORAL_RE.test(query);
+    const dateBoost = (text: string): number =>
+      isTemporal && DATE_RE.test(text) ? TEMPORAL_BOOST : 0;
+
     // Semantic scores for all active memories (one embed + one SQL round-trip).
     const queryEmbedding = await this.provider.embed(query, "embed_query");
     const scored: ScoredMemory[] = userId
       ? await this.store.semanticMemories(userId, queryEmbedding)
       : [];
 
-    // Fuse semantic + keyword into a single score per memory.
+    // Fuse semantic + keyword (+ temporal date boost) into a single score.
     const fused = scored.map((m) => ({
       m,
-      score: ALPHA * m.semantic + (1 - ALPHA) * kw(`${m.key} ${m.value}`),
+      score: ALPHA * m.semantic + (1 - ALPHA) * kw(`${m.key} ${m.value}`) + dateBoost(m.value),
     }));
 
     const stable = fused.filter((x) => STABLE_TYPES.has(x.m.type));
@@ -115,17 +128,29 @@ export class Recaller {
       return true;
     };
 
-    // (a) Stable facts — always-on profile context.
+    // Reserve budget for dated events: if any episodic item clears the floor, cap
+    // the stable section so it can't swallow the whole budget and starve the
+    // dated event that answers a temporal query.
+    const hasEpisodic = episodic.some((x) => x.score >= RELEVANCE_FLOOR);
+    const stableCap = hasEpisodic ? Math.floor(budget * STABLE_BUDGET_SHARE) : budget;
+    const emitStable = (line: string): boolean => {
+      if (used + estimateTokens(`${line}\n`) > stableCap) return false;
+      lines.push(line);
+      used += estimateTokens(`${line}\n`);
+      return true;
+    };
+
+    // (a) Stable facts — always-on profile context (capped to leave event room).
     if (stable.length > 0 && fits(HEADER_FACTS)) {
       let headerEmitted = false;
       for (const { m } of stable) {
         const note = await this.factNote(userId, m);
         const line = `- ${m.value}${note}`;
         if (!headerEmitted) {
-          if (!emit(HEADER_FACTS)) break;
+          if (!emitStable(HEADER_FACTS)) break;
           headerEmitted = true;
         }
-        if (emit(line)) {
+        if (emitStable(line)) {
           citations.push({
             turn_id: m.source_turn ?? "",
             score: round4(m.confidence),
