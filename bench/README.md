@@ -60,3 +60,35 @@ It writes the raw `bench/results/REPORT.md` + `report.json` (git-ignored); the
 curated snapshot with the written analysis is committed at
 [`../docs/COMPARISON.md`](../docs/COMPARISON.md). `bench/report.ts` can also be run
 standalone against already-running services (see its header).
+
+## Benchmark suite (`bench/suite/`)
+
+The bigger evaluation framework: external + synthetic benchmarks normalized to one
+`Scenario` format ([`suite/types.ts`](suite/types.ts)), scored by an LLM judge
+([`suite/judge.ts`](suite/judge.ts)) on the **mem0 three-axis card** — accuracy
+by category / tokens-per-recall / p50–p95 latency ([`suite/runner.ts`](suite/runner.ts)).
+
+Run one benchmark against one running service:
+
+```bash
+npx tsx bench/suite/run.ts --adapter <name> --url http://localhost:8080 --label baseline --limit 20
+```
+
+Adapters resolve by convention from `suite/adapters/<name>.ts`. Run the full
+4×4 comparison (all benchmarks × all implementations, bounded) with
+`bash ../scripts/run-suite.sh` from the repo root.
+
+### Datasets
+
+Downloaded data lives in git-ignored `bench/data/<name>/`. Sources:
+
+| Adapter | Source | License | Get it |
+|---|---|---|---|
+| `custom` | in-repo `scenarios/comparison.json` | — | (already present) |
+| `longmemeval` | LongMemEval oracle (Wu et al., ICLR'25), HF `xiaowu0162/longmemeval-cleaned` | research (not redistributed) | `npx tsx bench/suite/adapters/longmemeval.download.ts oracle` |
+| `locomo` | LoCoMo `locomo10.json` (snap-research/locomo) | CC BY-NC 4.0 (not redistributed) | `curl -sL https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json -o bench/data/locomo/locomo10.json` |
+| `ruler-niah` | synthetic generator (RULER/NIAH-style) | — (generated) | none — knobs: `RULER_HAYSTACK` (default 50), `RULER_SEED` (1337) |
+
+Category mapping (every adapter → our rubric): single-session/single-hop/open-domain
+→ `recall`; multi-session/multi-hop → `multihop`; temporal → `temporal`;
+knowledge-update → `fact_evolution`; abstention/adversarial → `noise_abstention`.
