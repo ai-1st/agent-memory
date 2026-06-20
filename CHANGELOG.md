@@ -35,6 +35,58 @@ root baseline.
 
 ---
 
+## v5 — Are the probes too easy? Discrimination audit → adversarial set → driving LoCoMo up
+
+This arc started from a sharp question: the good builds were scoring near 100% on
+most benchmarks — is that because they're *good*, or because the probes can't
+*discriminate*? Everything below answers that, then acts on it. (Git: `d63b044`,
+`2351e41`, `3f0143b`, `c2636d8`, `18b1008`, `d5075a5`, `4d85994`, `f66ebed`,
+`41344f1`, `ad25ab1`, `6a9125a`, `fa17440`, …)
+
+**1. Probe-discrimination audit (`d63b044`) + strict pass-floor (`2351e41`).**
+Verdict: *partly* too easy, but the dominant defect is **sample size, not
+difficulty**. A perfect 3/3 cell is statistically consistent with a true rate of
+44% (Wilson); ruler at N=6 hid a ~40-pt recall hole that N=30 exposed. The judge is
+lenient but secondary — only ~2.5% of good-build passes flip under a `score≥0.8`
+floor (added to the card so this is now measurable). *Why:* before improving
+anything, make sure the ruler is trustworthy.
+
+**2. Adversarial set + LoCoMo on the LLM builds (`3f0143b`, `c2636d8`, `18b1008`).**
+Added a 30-probe `adversarial` fixture (stale-fact traps, multi-hop with decoys,
+abstention-under-pressure, same-slot collisions) and ran LoCoMo on the LLM builds
+(was baseline-only). This **reversed the earlier "simple wins" read**: on probes
+that actually discriminate, opinionated leads (adversarial 80% vs 63–70%; multi-hop
+4/4) — its link-graph earns its cost where reasoning is hard. The earlier "no
+premium" conclusion was an artifact of saturated, low-N tests.
+
+**3. Driving LoCoMo up — the real engineering (`d5075a5` → `fa17440`).** LoCoMo
+(realistic long multi-session) was the worst benchmark (~25%, 75% fail). Traced in
+code: failures cluster in **temporal** (~90% fail) and **multi-hop** (~83%), and the
+turn timestamp was being *dropped before extraction*. Levers, each benchmarked
+(Haiku, N=100):
+- **Date-anchoring** (`d5075a5`, all three builds): thread the turn timestamp into
+  extraction and resolve "last Saturday" → an absolute date. opinionated temporal
+  16→46, overall 27→42. *Helps only where recall uses the dates* — it regressed
+  maxxed (compaction strips them) and barely moved simple.
+- **Coverage** is the dominant lever (the residuals were "no record of X
+  documented" — missing facts, not bad reasoning). Exhaustive-extraction prompt +
+  wider recall took opinionated 42→57; **chunked extraction** (extract per focused
+  message-window AND the whole turn, then semantic-dedup) took it **57→67**
+  (`ad25ab1`, default-on in `fa17440`). **Multi-query retrieval** (`41344f1`) was
+  explored and measured to *not* help (55 vs 57) — the wider recall already covers
+  it; kept env-gated off.
+- **SOTA research** (`6a9125a`, [locomo-sota-techniques](research/locomo-sota-techniques.md)):
+  Mem0 hits 92.5 on LoCoMo with entity-linking + multi-signal fusion (multi-hop)
+  and date-anchoring + timeline summarization (temporal) — confirming our direction.
+
+Full detail in [BENCHMARKS.md](docs/BENCHMARKS.md),
+[failure-analysis-and-action-plan.md](docs/research/failure-analysis-and-action-plan.md),
+and [probe-discrimination-audit.md](docs/research/probe-discrimination-audit.md).
+Per-build improvement iterations (3 each, maxxed as the playground) continue below
+as they land.
+
+---
+
 ## v4 — Robust, resumable, parallel bench harness
 
 **What changed:** Reworked the suite runner (`bench/suite/runner.ts` + `run.ts`)
