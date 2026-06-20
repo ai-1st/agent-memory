@@ -395,7 +395,7 @@ interface ParsedCandidate {
   type: string | null;
   text: string;
   date: string | null;
-  contradicts: string[];
+  contradicts: Array<{ value: string; note: string }>;
   isTurn: boolean;
   sim: number | null;
 }
@@ -409,14 +409,14 @@ function parseCandidates(block: string): ParsedCandidate[] {
     if (!m) continue;
     const id = m[1];
     let rest = m[2];
-    const contradicts: string[] = [];
-    const cMatch = rest.match(/\[CONTRADICTS ([^\]]+)\]/);
+    const contradicts: Array<{ value: string; note: string }> = [];
+    const cMatch = rest.match(/\[CONTRADICTS (.+)\]\s*$/);
     if (cMatch) {
-      for (const part of cMatch[1].split(",")) {
-        const idm = /id=(\S+)/.exec(part.trim());
-        if (idm) contradicts.push(idm[1]);
+      for (const part of cMatch[1].split(";")) {
+        const pm = /"([^"]*)"(?:\s*[—–-]\s*(.*))?/.exec(part.trim());
+        if (pm) contradicts.push({ value: pm[1], note: (pm[2] ?? "").trim() });
       }
-      rest = rest.replace(/\s*\[CONTRADICTS [^\]]+\]/, "");
+      rest = rest.replace(/\s*\[CONTRADICTS .+\]\s*$/, "");
     }
     const typeM = /^\[([a-z]+)\]\s*/.exec(rest);
     const type = typeM ? typeM[1] : null;
@@ -451,7 +451,6 @@ function buildRecall(prompt: string): z.infer<typeof recallPlanSchema> {
   const cands = parseCandidates(block);
   const qset = queryTokens(prompt);
 
-  const byId = new Map(cands.map((c) => [c.id, c]));
   const scored = cands.map((c) => {
     const raw = overlap(qset, c.text);
     let s = raw;
@@ -481,12 +480,10 @@ function buildRecall(prompt: string): z.infer<typeof recallPlanSchema> {
   for (const { c } of facts) {
     // include all stable facts (multi-hop) - mock always includes facts
     let line = `- ${c.text}`;
-    if (c.contradicts.length > 0) {
-      const partner = c.contradicts.map((p) => byId.get(p)).find(Boolean);
-      if (partner) {
-        line = `- ${c.text} — note: this changed from a previous statement ("${partner.text}"); the user appears to have reversed their view.`;
-        selected.add(partner.id);
-      }
+    const conf = c.contradicts[0];
+    if (conf) {
+      const why = conf.note ? ` (${conf.note})` : "";
+      line = `- ${c.text} — note: this reverses an earlier statement ("${conf.value}")${why}; the user appears to have changed their view.`;
     }
     factLines.push(line);
     selected.add(c.id);

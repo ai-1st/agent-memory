@@ -101,12 +101,20 @@ export class RecallPipeline {
       byId.set(m.id, m);
     }
 
-    // Build a quick lookup of contradiction partners for annotation.
-    const contradictsNote = new Map<string, string[]>();
+    // For each memory, capture its contradiction partner(s) WITH the link note
+    // (the reconcile `reason`), so recall can narrate *why* two facts conflict,
+    // not just that they do.
+    const contradictions = new Map<string, Array<{ value: string; note: string }>>();
     for (const id of byId.keys()) {
       const links = await this.store.linksOf(id);
-      const partners = links.filter((l) => l.kind === "contradiction").map((l) => l.id);
-      if (partners.length > 0) contradictsNote.set(id, partners);
+      for (const l of links) {
+        if (l.kind !== "contradiction") continue;
+        const partner = byId.get(l.id);
+        if (!partner || typeof partner.value !== "string") continue;
+        const arr = contradictions.get(id) ?? [];
+        arr.push({ value: partner.value, note: l.note ?? "" });
+        contradictions.set(id, arr);
+      }
     }
 
     // --- candidate lines for memories ---
@@ -122,9 +130,10 @@ export class RecallPipeline {
       if (sim !== undefined) line += ` [sim=${sim.toFixed(2)}]`;
       line += ` ${m.value}`;
       if (prior) line += ` (current; previously: ${prior})`;
-      const partners = contradictsNote.get(m.id);
-      if (partners && partners.length > 0) {
-        line += ` [CONTRADICTS ${partners.map((p) => `id=${p}`).join(", ")}]`;
+      const conflicts = contradictions.get(m.id);
+      if (conflicts && conflicts.length > 0) {
+        const parts = conflicts.map((c) => (c.note ? `"${c.value}" — ${c.note}` : `"${c.value}"`));
+        line += ` [CONTRADICTS ${parts.join("; ")}]`;
       }
       candidates.push({
         id: m.id,

@@ -52,6 +52,14 @@ export type Extraction = z.infer<typeof extractionSchema>;
  *  - NOOP      : noise / already-known with nothing to change.
  */
 export const reconcileOpSchema = z.object({
+  /**
+   * Chain-of-thought FIRST: the model writes a one-clause justification BEFORE
+   * choosing `op`/`value`, so the reasoning actually conditions the decision
+   * (a field placed after the decision is post-hoc and wasted). It is also
+   * reused as the human-readable note on contradiction links and surfaced in
+   * recall to narrate *why* a fact changed.
+   */
+  reason: z.string().default(""),
   op: z.enum(["ADD", "UPDATE", "REINFORCE", "CONTRADICT", "NOOP"]),
   /** Final, context-enriched value to store (for ADD/UPDATE/CONTRADICT). */
   value: z.string().default(""),
@@ -66,8 +74,6 @@ export const reconcileOpSchema = z.object({
    *  - CONTRADICT: the memory/memories the new fact conflicts with (linked).
    */
   target_ids: z.array(z.string()).default([]),
-  /** One short clause explaining the decision (logged, aids debugging). */
-  reason: z.string().default(""),
 });
 export type ReconcileOp = z.infer<typeof reconcileOpSchema>;
 

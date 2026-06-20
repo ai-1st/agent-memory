@@ -4,6 +4,33 @@ The design story, newest first. Each entry: what changed, why, what I observed.
 
 ---
 
+## v6 — Make `reason` earn its keep (CoT + narrated contradictions)
+
+**What changed:** The per-op `reason` field in the reconcile schema used to sit
+*last* and was essentially vestigial — it was emitted after the decision (so it
+couldn't influence it), stored only as the note on contradiction links, and never
+read back. Two changes fixed that:
+1. **`reason` moved to the FIRST field** of the reconcile op (`schemas.ts`), so the
+   model writes its justification before choosing `op`/`value` — real
+   chain-of-thought that conditions the decision instead of a post-hoc label. The
+   reconcile prompt now instructs "reason first".
+2. **The contradiction link note is surfaced in recall.** Previously recall
+   annotated conflicts as `[CONTRADICTS id=…]` (opaque ids); now it injects the
+   conflicting fact's value *and* the stored reason, e.g. `[CONTRADICTS "User
+   previously liked oranges" — oranges now too acidic]`, and the compaction prompt
+   narrates the change **and the why** ("…now prefers apples — finds oranges too
+   acidic") rather than just *that* a change happened.
+
+**Why:** an LLM "reason" only improves a decision if it precedes it; and a stored
+note that nothing reads is wasted output tokens. This turns the field from dead
+weight into (a) a quality lever on the reconcile decision and (b) the
+contradiction *narration* the design always intended.
+
+**Observed:** offline suite green; recall now explains the cause of a reversal, not
+just its existence.
+
+---
+
 ## v5 — Live wiring against Claude Opus 4.8 (the `temperature` trap)
 
 **What changed:** Ran the first real end-to-end smoke (real Anthropic + OpenAI

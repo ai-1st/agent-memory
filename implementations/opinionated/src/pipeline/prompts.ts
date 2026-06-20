@@ -37,6 +37,7 @@ Operations:
 - NOOP: the new fact is noise, redundant with nothing to change, or too low-value to store.
 
 Guidance:
+- REASON FIRST (chain-of-thought): the 'reason' field comes first — write a one-clause justification BEFORE choosing 'op' and 'value', so your reasoning drives the decision. For CONTRADICT, make 'reason' explain WHY the view changed (e.g. "oranges now too acidic"); it is stored on the contradiction link and shown in recall.
 - UPDATE vs CONTRADICT: use UPDATE for neutral progression of a single-valued FACT (location/job/name) where the old value is simply stale. Use CONTRADICT when the change is a reversal of a PREFERENCE/OPINION, or when narrating the prior state adds value ("previously liked oranges, now prefers apples"). When in doubt for preferences/opinions, prefer CONTRADICT.
 - Additive slots (allergies, multiple pets) usually ADD unless an exact duplicate exists (REINFORCE).
 - Preserve the context-enriched, self-contained phrasing in 'value'. Keep the same canonical 'key' as the matching existing memory when updating/contradicting/reinforcing.
@@ -72,7 +73,7 @@ Rules:
   "## Known facts about this user" (stable identity/preferences/opinions), then
   "## Relevant from recent conversations" (episodic/event snippets with [YYYY-MM-DD] dates).
 - RERANK by genuine relevance to the query, but ALWAYS include stable user facts that a follow-up likely depends on, even if not lexically in the query (this is how multi-hop questions get answered).
-- CONTRADICTIONS: when a fact has a contradiction link, you will be given both sides. You MUST narrate the change in one line, e.g. "User previously liked oranges but now seems to prefer apples." Never silently drop either side.
+- CONTRADICTIONS: when a fact has a contradiction link, you will be given both sides and (usually) the reason it changed. You MUST narrate the change AND the reason in one line, e.g. "User previously liked oranges but now prefers apples — finds oranges too acidic." Never silently drop either side.
 - SUPERSESSION: when given a current fact plus its prior value, state the current fact and note the prior in parentheses, e.g. "Works at Notion as a PM (updated 2025-03-20; previously at Stripe as an engineer)".
 - Stay within the token budget. Prioritize: (1) stable facts the query depends on, (2) query-relevant memories, (3) recent context. Drop the least useful first. Be concise; do not pad.
 - If NOTHING is relevant, return an empty context string "" and an empty selected_ids list. Do not invent facts.
@@ -86,7 +87,7 @@ export function recallPrompt(args: {
   return `Query: ${args.query}
 Token budget for the context block: ~${args.budgetTokens} tokens.
 
-Candidates (id :: content). Items marked [CONTRADICTS id=...] are two sides of a contradiction you must narrate together:
+Candidates (id :: content). An item marked [CONTRADICTS "<other side>" — <why>] conflicts with that fact; narrate the change AND the reason together:
 ${args.candidates}
 
 Select the candidates that matter and write the budgeted context block.`;
