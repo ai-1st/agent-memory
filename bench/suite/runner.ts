@@ -9,8 +9,26 @@ import type { Card, Cost, ProbeResult, Scenario, Stat } from "./types";
 
 const stat = (xs: number[]): Stat => ({ mean: mean(xs), p50: pctl(xs, 50), p95: pctl(xs, 95) });
 
-// Approximate USD per 1M tokens — adjust as provider pricing changes.
-const PRICE = { llmIn: 15, llmOut: 75, embed: 0.13 };
+// Approximate USD per 1M tokens, per model tier — adjust as provider pricing
+// changes. Embedding is text-embedding-3-large regardless of the chat model.
+// IMPORTANT: cost must be priced at the model the service actually used. Pricing
+// every card at Opus rates (the old behavior) overstated Haiku runs ~10-15x.
+const EMBED_PRICE = 0.13;
+type Rates = { llmIn: number; llmOut: number; embed: number };
+const PRICES: Record<string, Rates> = {
+  opus: { llmIn: 15, llmOut: 75, embed: EMBED_PRICE },
+  sonnet: { llmIn: 3, llmOut: 15, embed: EMBED_PRICE },
+  haiku: { llmIn: 1, llmOut: 5, embed: EMBED_PRICE },
+};
+
+/** Pick a price tier from the model id the container was run with. */
+export function priceFor(model: string): { tier: string; rates: Rates } {
+  const m = model.toLowerCase();
+  if (m.includes("haiku")) return { tier: "haiku", rates: PRICES.haiku };
+  if (m.includes("sonnet")) return { tier: "sonnet", rates: PRICES.sonnet };
+  return { tier: "opus", rates: PRICES.opus };
+}
+
 const round = (n: number, d: number): number => {
   const f = 10 ** d;
   return Math.round(n * f) / f;
@@ -72,16 +90,22 @@ export async function runScenarios(
   }
 
   const m1 = await fetchMetrics(url);
+  // Price at the model the service actually ran with (the same env var the
+  // container reads), not a hardcoded tier.
+  const model = process.env.MEMORY_LLM_MODEL ?? "claude-opus-4-8";
+  const { rates } = priceFor(model);
   const cost: Cost = {
     llm_calls: m1.llmCalls - m0.llmCalls,
     llm_input_tokens: m1.llmIn - m0.llmIn,
     llm_output_tokens: m1.llmOut - m0.llmOut,
     embedding_calls: m1.embCalls - m0.embCalls,
     embedding_tokens: m1.embTok - m0.embTok,
+    pricing_model: model,
+    pricing_rates: rates,
     est_usd: round(
-      ((m1.llmIn - m0.llmIn) / 1e6) * PRICE.llmIn +
-        ((m1.llmOut - m0.llmOut) / 1e6) * PRICE.llmOut +
-        ((m1.embTok - m0.embTok) / 1e6) * PRICE.embed,
+      ((m1.llmIn - m0.llmIn) / 1e6) * rates.llmIn +
+        ((m1.llmOut - m0.llmOut) / 1e6) * rates.llmOut +
+        ((m1.embTok - m0.embTok) / 1e6) * rates.embed,
       4,
     ),
   };
@@ -132,7 +156,7 @@ export function printCard(card: Card): void {
     `ingest ms: mean ${card.ingestLatencyMs.mean} (p50 ${card.ingestLatencyMs.p50} / p95 ${card.ingestLatencyMs.p95})\n`,
   );
   process.stderr.write(
-    `cost: ~$${card.cost.est_usd}  (llm ${card.cost.llm_input_tokens}in/${card.cost.llm_output_tokens}out tok in ${card.cost.llm_calls} calls; embed ${card.cost.embedding_tokens} tok)\n`,
+    `cost: ~$${card.cost.est_usd} @ ${card.cost.pricing_model}  (llm ${card.cost.llm_input_tokens}in/${card.cost.llm_output_tokens}out tok in ${card.cost.llm_calls} calls; embed ${card.cost.embedding_tokens} tok)\n`,
   );
   if (card.judgeErrors) process.stderr.write(`judge errors: ${card.judgeErrors}\n`);
 }

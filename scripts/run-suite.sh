@@ -48,6 +48,9 @@ trap 'pkill -f "tsx src/server.ts" 2>/dev/null || true; for p in "${PIDS[@]}"; d
 # LLM model is a container parameter (default Opus); set MEMORY_LLM_MODEL to switch
 # (e.g. claude-haiku-4-5-20251001 for a cheap run). Baseline uses no LLM.
 MODEL="${MEMORY_LLM_MODEL:-claude-opus-4-8}"
+# Export so the run.ts cost calculator prices at the same model the servers use
+# (the runner reads MEMORY_LLM_MODEL to pick the per-model price tier).
+export MEMORY_LLM_MODEL="$MODEL"
 ensure_up baseline    "$REPO"                              8080 MEMORY_DB_PATH="$DATA/baseline.sqlite"
 ensure_up opinionated "$REPO/implementations/opinionated"  8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
 ensure_up simple      "$REPO/implementations/simple"       8092 MEMORY_DATA_DIR="$DATA/simple" MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/simple-llm.csv"
@@ -60,10 +63,11 @@ echo "model=$MODEL judge=${SUITE_JUDGE_MODEL:-claude-opus-4-8}  llm-limits: cust
 
 run() { # impl url adapter limit [haystack]
   local impl="$1" url="$2" adapter="$3" limit="$4" hay="${5:-50}"
-  echo "[$impl] START $adapter (limit $limit)"
-  RULER_HAYSTACK="$hay" npx tsx bench/suite/run.ts --adapter "$adapter" --url "$url" --label "$impl" --limit "$limit" \
-    >"/tmp/suite-$impl-$adapter.log" 2>&1 || echo "[$impl] $adapter FAILED"
-  local card="bench/results/suite/${adapter}__${impl}.json"
+  local label="${impl}${LABEL_SUFFIX:-}"
+  echo "[$label] START $adapter (limit $limit)"
+  RULER_HAYSTACK="$hay" npx tsx bench/suite/run.ts --adapter "$adapter" --url "$url" --label "$label" --limit "$limit" \
+    >"/tmp/suite-$label-$adapter.log" 2>&1 || echo "[$label] $adapter FAILED"
+  local card="bench/results/suite/${adapter}__${label}.json"
   local acc; acc=$(grep -m1 '"accuracy"' "$card" 2>/dev/null | tr -d ' ,' || true)
   local usd; usd=$(grep -m1 '"est_usd"' "$card" 2>/dev/null | tr -d ' ,' || true)
   echo "[$impl] DONE $adapter -> ${acc:-no-card} ${usd:-}"

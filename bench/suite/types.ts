@@ -69,6 +69,10 @@ export interface Cost {
   llm_output_tokens: number;
   embedding_calls: number;
   embedding_tokens: number;
+  /** Model used to price est_usd (e.g. "claude-opus-4-8", "claude-haiku-4-5"). */
+  pricing_model: string;
+  /** $/1M input·output·embedding tokens used for est_usd (so the figure is auditable). */
+  pricing_rates: { llmIn: number; llmOut: number; embed: number };
   est_usd: number;
 }
 

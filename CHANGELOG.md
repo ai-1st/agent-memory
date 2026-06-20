@@ -35,6 +35,49 @@ root baseline.
 
 ---
 
+## v3 — Full matrix re-run (bugs fixed), Haiku vs Opus, model-aware cost, contradiction fixture
+
+**What changed:**
+- **Re-ran the whole suite after fixing the two v2 bugs** (opinionated's recall 500,
+  maxxed's extraction schema-mismatch). opinionated's `ruler-niah` recovered
+  **33% → 100%** on Opus; the v2 "bug artifact" caveats are now retired.
+- **Ran every benchmark on both Opus 4.8 and Haiku 4.5** (the chat model is a
+  container parameter, `MEMORY_LLM_MODEL`), with **5× the probe count** on the
+  cheap Haiku pass. Finding: **Haiku holds accuracy within a few points of Opus**
+  on a larger sample — a viable default.
+- **Made the cost axis model-aware.** `bench/suite/runner.ts` previously priced
+  *every* card at Opus rates, overstating Haiku ~10–15×. Added `priceFor(model)`
+  (opus/sonnet/haiku tiers), recorded `pricing_model`/`pricing_rates` on each card,
+  and a `restamp-cost.ts` to correct already-written cards. Both run scripts now
+  export `MEMORY_LLM_MODEL` so the runner prices at the model the servers used.
+- **Built the `contradiction` fixture** (`bench/suite/adapters/contradiction.ts`)
+  to test opinionated's signature link-don't-supersede thesis head-on, and a
+  port-safe `scripts/run-contradiction.sh` (never broad-pkills).
+
+**What we observed:**
+- **`simple` is the standout** on every benchmark and both models — top-or-tied
+  accuracy, lowest cost/latency, most Haiku-robust (the tradeoff is larger recall
+  context). `maxxed` matches it on easy benchmarks but degrades most under Haiku.
+- **`opinionated`'s per-fact reconcile fan-out is the cost driver** — 3–8× more LLM
+  calls than `simple` (1101 vs 400 on ruler, 290 vs 34 on longmemeval) for no
+  accuracy premium. Haiku collapses absolute cost (worst card $7.12 → $2.56) but
+  not the ranking (cost is call-count-bound, not per-token).
+- **The contradiction fixture did NOT prove opinionated ahead.** The reason-as-CoT
+  change (opinionated v6) fixed its tension probes to a perfect 5/5 with the richest
+  narration, but it nets 90% (over-narrated one unsettled fact as "finalized",
+  failing a control probe), while **`simple` and `maxxed` both hit 100% at 1/7 and
+  1/2 the cost**. The live extractor files conflicting statements under different
+  keys, so the supersede builds surface both sides anyway — defeating the fixture's
+  attempt to isolate opinionated's edge.
+
+**Verdict / what's next:** if we shipped one, **`simple` on Haiku**, grafting in
+opinionated's narrated-contradiction idea only where a use case needs the prior side
+surfaced. Full numbers in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Remaining gaps:
+LoCoMo on the LLM builds (a multi-hour batch) and larger N on the standard
+benchmarks for the LLM builds.
+
+---
+
 ## v2 — Benchmark suite (LongMemEval / LoCoMo / RULER-NIAH / custom)
 
 **What changed:** Built a reusable suite ([`bench/suite/`](bench/suite)) — a
