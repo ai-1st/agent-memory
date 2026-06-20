@@ -141,9 +141,14 @@ export class Recaller {
     };
 
     // (a) Stable facts — always-on profile context (capped to leave event room).
+    // Suppress near-duplicate facts (same concept extracted under slightly
+    // different phrasings) so the tight budget isn't spent on redundancy.
+    const emittedTok: Set<string>[] = [];
     if (stable.length > 0 && fits(HEADER_FACTS)) {
       let headerEmitted = false;
       for (const { m } of stable) {
+        const mtok = tokenSet(m.value);
+        if (emittedTok.some((e) => jaccard(mtok, e) >= 0.8)) continue;
         const note = await this.factNote(userId, m);
         const line = `- ${m.value}${note}`;
         if (!headerEmitted) {
@@ -151,6 +156,7 @@ export class Recaller {
           headerEmitted = true;
         }
         if (emitStable(line)) {
+          emittedTok.push(mtok);
           citations.push({
             turn_id: m.source_turn ?? "",
             score: round4(m.confidence),
@@ -235,4 +241,12 @@ function cosine(a: number[], b: number[]): number {
   }
   const d = Math.sqrt(na) * Math.sqrt(nb);
   return d === 0 ? 0 : dot / d;
+}
+
+/** Token-set Jaccard overlap — used to drop near-duplicate facts from recall. */
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  return inter / (a.size + b.size - inter);
 }
