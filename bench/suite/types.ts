@@ -83,7 +83,16 @@ export interface Card {
   url: string;
   scenarios: number;
   probes: number;
-  accuracy: number; // overall judge pass rate
+  accuracy: number; // overall judge pass rate (judge's binary `correct`)
+  /**
+   * Stricter pass rate: counts a probe correct only if the judge ALSO scored it
+   * >= STRICT_FLOOR (0.8). The judge sets `correct` independently of `score`, so
+   * "barely conveyed" answers pass `accuracy` at score 0.7; accuracyStrict
+   * surfaces those. lenientPasses = probes that pass accuracy but fail the floor.
+   */
+  accuracyStrict: number;
+  lenientPasses: number;
+  strictFloor: number;
   accuracyByCategory: Record<string, { pass: number; total: number }>;
   tokensPerRecall: Stat;
   recallLatencyMs: Stat;

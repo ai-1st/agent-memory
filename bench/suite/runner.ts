@@ -9,6 +9,11 @@ import type { Card, Cost, ProbeResult, Scenario, Stat } from "./types";
 
 const stat = (xs: number[]): Stat => ({ mean: mean(xs), p50: pctl(xs, 50), p95: pctl(xs, 95) });
 
+// A probe passes the strict floor only if the judge scored it >= this AND marked
+// it correct. The judge's binary `correct` is set independently of `score`, so
+// this catches "barely conveyed" passes (e.g. score 0.7) that inflate accuracy.
+export const STRICT_FLOOR = 0.8;
+
 // Approximate USD per 1M tokens, per model tier — adjust as provider pricing
 // changes. Embedding is text-embedding-3-large regardless of the chat model.
 // IMPORTANT: cost must be priced at the model the service actually used. Pricing
@@ -118,6 +123,10 @@ export async function runScenarios(
     if (r.correct) c.pass++;
   }
   const passed = results.filter((r) => r.correct).length;
+  const strictPassed = results.filter((r) => r.correct && r.score >= STRICT_FLOOR).length;
+  const lenientPasses = passed - strictPassed;
+  const rate = (n: number): number =>
+    results.length ? Math.round((n / results.length) * 1000) / 1000 : 0;
 
   return {
     adapter,
@@ -125,7 +134,10 @@ export async function runScenarios(
     url,
     scenarios: scenarios.length,
     probes: results.length,
-    accuracy: results.length ? Math.round((passed / results.length) * 1000) / 1000 : 0,
+    accuracy: rate(passed),
+    accuracyStrict: rate(strictPassed),
+    lenientPasses,
+    strictFloor: STRICT_FLOOR,
     accuracyByCategory: byCat,
     tokensPerRecall: stat(ctxTokens),
     recallLatencyMs: stat(recallMs),
@@ -140,7 +152,7 @@ export function printCard(card: Card): void {
   const cats = Object.keys(card.accuracyByCategory).sort();
   process.stderr.write(`\n== ${card.adapter} / ${card.label} (${card.url}) ==\n`);
   process.stderr.write(
-    `accuracy: ${Math.round(card.accuracy * 100)}%  (${card.probes} probes, ${card.scenarios} scenarios)\n`,
+    `accuracy: ${Math.round(card.accuracy * 100)}%  (strict@${card.strictFloor}: ${Math.round(card.accuracyStrict * 100)}%, ${card.lenientPasses} lenient; ${card.probes} probes, ${card.scenarios} scenarios)\n`,
   );
   for (const c of cats) {
     const v = card.accuracyByCategory[c];
