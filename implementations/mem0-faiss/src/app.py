@@ -38,6 +38,11 @@ CONFIG = {
             "collection_name": "mem0",
             "path": DATA_DIR,
             "embedding_model_dims": EMBED_DIMS,
+            # mem0's FAISS default is raw euclidean on un-normalized vectors, which
+            # retrieves poorly on OpenAI embeddings (near-empty results). Cosine is
+            # the standard for semantic search — a backend config, not a pipeline
+            # change, and it gives the baseline its fair best shot.
+            "distance_strategy": "cosine",
         },
     },
     "llm": {
