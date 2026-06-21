@@ -1,6 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "vcs": { "enabled": false },
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "organizeImports": { "enabled": true },
   "linter": {
     "enabled": true,
@@ -16,6 +16,14 @@
     "lineWidth": 100
   },
   "files": {
-    "ignore": ["node_modules", "dist", "data", "coverage"]
+    "ignore": [
+      "node_modules",
+      "dist",
+      "bench/results",
+      "docs",
+      "data",
+      "coverage",
+      "implementations"
+    ]
   }
 }

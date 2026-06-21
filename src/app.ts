@@ -1,24 +1,39 @@
 /**
  * Hono application implementing the memory-service HTTP contract (§3).
  *
- * `createApp(dbPath?)` builds the app over a given database so tests can use a
- * temp file and so "restart" is just constructing a new app over the same file.
+ * `createApp(opts)` builds the app over a given pglite dataDir and LLM provider
+ * so tests can use an in-memory store + a mock provider, and "restart" is just
+ * constructing a new app over the same dataDir.
+ *
  * Endpoints are synchronous by contract: when POST /turns returns, extracted
- * memories are already committed and queryable.
+ * memories are already committed (pglite writes are awaited) and queryable.
  */
 
 import { Hono } from "hono";
 import type { Context } from "hono";
 import { makeAuth } from "./auth";
-import { loadSettings } from "./config";
-import { buildExtractor } from "./extraction";
+import { type Settings, loadSettings } from "./config";
+import { type LLMProvider, buildProvider } from "./llm";
+import { errStr } from "./logging";
+import { snapshot as metricsSnapshot } from "./metrics";
 import { recallRequestSchema, searchRequestSchema, turnRequestSchema } from "./models";
-import { buildRecaller } from "./recall";
+import { IngestPipeline } from "./pipeline/ingest";
+import { RecallPipeline, type RecallResult } from "./pipeline/recall";
 import { Store } from "./store";
 
 export interface AppBundle {
   app: Hono;
   store: Store;
+  llm: LLMProvider;
+  ready: Promise<void>;
+}
+
+export interface CreateAppOptions {
+  settings?: Partial<Settings>;
+  /** Inject a provider directly (tests). Overrides settings.llmMode. */
+  llm?: LLMProvider;
+  /** Override the pglite dataDir ("memory://" for an ephemeral store). */
+  dataDir?: string;
 }
 
 async function readJson(c: Context): Promise<unknown> {
@@ -29,35 +44,32 @@ async function readJson(c: Context): Promise<unknown> {
   }
 }
 
-export function createApp(dbPath?: string): AppBundle {
-  const settings = loadSettings();
-  if (dbPath) settings.dbPath = dbPath;
+export function createApp(opts: CreateAppOptions = {}): AppBundle {
+  const settings = { ...loadSettings(), ...opts.settings };
+  if (opts.dataDir) settings.dataDir = opts.dataDir;
 
-  const store = new Store(settings.dbPath);
-  store.init();
-  const extractor = buildExtractor(settings);
-  const recaller = buildRecaller(settings, store);
+  const llm = opts.llm ?? buildProvider(settings);
+  const store = new Store(settings.dataDir, settings.embeddingDim);
+  const ingest = new IngestPipeline(llm, store);
+  const recall = new RecallPipeline(llm, store);
+
+  const ready = store.init();
 
   const app = new Hono();
   app.use("*", makeAuth(settings.authToken));
 
-  // Robustness: never crash the process on an unexpected error.
+  // Robustness: never crash the process on an unexpected error. Log via errStr
+  // (never the raw object) so util.inspect can't throw while formatting it.
   app.onError((err, c) => {
-    console.error("unhandled error:", err);
+    console.error("unhandled error:", errStr(err));
     return c.json({ error: "internal error" }, 500);
   });
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  // Token-spend metrics. The baseline uses no LLM/embeddings, so these are always
-  // zero — exposed for parity with the LLM builds so the benchmark harness can
-  // diff /metrics uniformly across implementations.
-  app.get("/metrics", (c) =>
-    c.json({
-      llm: { calls: 0, input_tokens: 0, output_tokens: 0 },
-      embedding: { calls: 0, tokens: 0 },
-    }),
-  );
+  // Cumulative token spend across ALL LLM + embedding calls since process start.
+  // Shape is fixed by contract (the benchmark harness diffs it).
+  app.get("/metrics", (c) => c.json(metricsSnapshot()));
 
   app.post("/turns", async (c) => {
     const parsed = turnRequestSchema.safeParse(await readJson(c));
@@ -70,31 +82,43 @@ export function createApp(dbPath?: string): AppBundle {
       content: m.content ?? "",
       name: m.name ?? null,
     }));
-    const turnId = store.insertTurn({
+
+    // 1) Persist the raw turn verbatim FIRST — it is the source of truth and
+    //    must be citable even if extraction later fails.
+    const turnId = await store.insertTurn({
       sessionId: req.session_id,
       userId: req.user_id ?? null,
       messages,
       timestamp: req.timestamp ?? null,
       metadata: req.metadata,
     });
+
+    // 2-4) Synchronous extract -> per-fact reconcile -> apply (incl. links).
+    const before = metricsSnapshot();
     try {
-      const extracted = extractor.extract(req.messages, {
+      await ingest.run(messages, {
         userId: req.user_id ?? null,
         sessionId: req.session_id,
         turnId,
         timestamp: req.timestamp ?? null,
       });
-      for (const em of extracted) {
-        store.addMemory(em, {
-          userId: req.user_id ?? null,
-          sessionId: req.session_id,
-          sourceTurn: turnId,
-        });
-      }
     } catch (err) {
-      // Persistence already succeeded; extraction failures must not fail the write.
-      console.warn(`extraction error on turn ${turnId}:`, err);
+      // Raw turn already persisted; extraction failure must not fail the write.
+      // Log via errStr so the logging call itself can never throw (which would
+      // escape this catch and 500 the request — the original bug).
+      console.warn(`extraction error on turn ${turnId}: ${errStr(err)}`);
     }
+    // Concise per-turn token line (this turn's delta + cumulative since startup).
+    const after = metricsSnapshot();
+    console.log(
+      `turn ${turnId} tokens: llm +${after.llm.input_tokens - before.llm.input_tokens}in/` +
+        `+${after.llm.output_tokens - before.llm.output_tokens}out ` +
+        `(${after.llm.calls - before.llm.calls} calls), ` +
+        `embed +${after.embedding.tokens - before.embedding.tokens} ` +
+        `(${after.embedding.calls - before.embedding.calls} calls) | ` +
+        `cumulative llm ${after.llm.input_tokens}in/${after.llm.output_tokens}out, ` +
+        `embed ${after.embedding.tokens}`,
+    );
     return c.json({ id: turnId }, 201);
   });
 
@@ -104,12 +128,21 @@ export function createApp(dbPath?: string): AppBundle {
       return c.json({ error: "invalid request", detail: parsed.error.issues }, 422);
     }
     const req = parsed.data;
-    const r = recaller.recall({
-      query: req.query,
-      userId: req.user_id ?? null,
-      sessionId: req.session_id ?? null,
-      maxTokens: req.max_tokens,
-    });
+    // Recall must ALWAYS return 200 (possibly empty). recall.run already degrades
+    // internally; this is the final belt-and-suspenders so no malformed candidate,
+    // link, or transient model error can ever turn /recall into a 500.
+    let r: RecallResult;
+    try {
+      r = await recall.run({
+        query: req.query,
+        userId: req.user_id ?? null,
+        sessionId: req.session_id ?? null,
+        maxTokens: req.max_tokens,
+      });
+    } catch (err) {
+      console.error(`recall failed, returning empty context: ${errStr(err)}`);
+      r = { context: "", citations: [] };
+    }
     return c.json({ context: r.context, citations: r.citations });
   });
 
@@ -119,7 +152,18 @@ export function createApp(dbPath?: string): AppBundle {
       return c.json({ error: "invalid request", detail: parsed.error.issues }, 422);
     }
     const req = parsed.data;
-    const results = store.search(req.query, {
+    let embedding: number[] | null = null;
+    if (req.query.trim()) {
+      try {
+        const [emb] = await llm.embed([req.query]);
+        embedding = emb ?? null;
+      } catch (err) {
+        console.warn(`search embed failed, falling back to lexical: ${errStr(err)}`);
+      }
+    }
+    const results = await store.search({
+      query: req.query,
+      embedding,
       userId: req.user_id ?? null,
       sessionId: req.session_id ?? null,
       limit: req.limit,
@@ -127,8 +171,15 @@ export function createApp(dbPath?: string): AppBundle {
     return c.json({ results });
   });
 
-  app.get("/users/:user_id/memories", (c) => {
-    const rows = store.listMemories(c.req.param("user_id"), false);
+  app.get("/users/:user_id/memories", async (c) => {
+    const rows = await store.listMemories(c.req.param("user_id"), false);
+    const ids = rows.map((r) => r.id);
+    const linkMap = new Map<string, string[]>();
+    for (const id of ids) {
+      const links = await store.linksOf(id);
+      const contradicts = links.filter((l) => l.kind === "contradiction").map((l) => l.id);
+      if (contradicts.length > 0) linkMap.set(id, contradicts);
+    }
     const memories = rows.map((r) => ({
       id: r.id,
       type: r.type,
@@ -140,20 +191,22 @@ export function createApp(dbPath?: string): AppBundle {
       created_at: r.created_at,
       updated_at: r.updated_at,
       supersedes: r.supersedes,
-      active: Boolean(r.active),
+      active: r.active,
+      // extension over the reference shape: surface the contradiction graph.
+      contradicts: linkMap.get(r.id) ?? [],
     }));
     return c.json({ memories });
   });
 
-  app.delete("/sessions/:session_id", (c) => {
-    store.deleteSession(c.req.param("session_id"));
+  app.delete("/sessions/:session_id", async (c) => {
+    await store.deleteSession(c.req.param("session_id"));
     return c.body(null, 204);
   });
 
-  app.delete("/users/:user_id", (c) => {
-    store.deleteUser(c.req.param("user_id"));
+  app.delete("/users/:user_id", async (c) => {
+    await store.deleteUser(c.req.param("user_id"));
     return c.body(null, 204);
   });
 
-  return { app, store };
+  return { app, store, llm, ready };
 }

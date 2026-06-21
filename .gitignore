@@ -30,8 +30,9 @@ bench/results/
 __pycache__/
 *.pyc
 
-# Local-only: the assignment brief (kept on disk, not tracked)
+# Local-only: the assignment brief + compliance self-assessment (kept on disk, not tracked)
 ASSIGNMENT.md
+COMPLIANCE.md
 
 # Downloaded benchmark datasets (large; not tracked)
 bench/data/

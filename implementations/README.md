@@ -1,18 +1,22 @@
-# Implementations
+# Implementations — supporting builds
 
-Three independent explorations of the memory service, each in its own folder, each
-a **self-contained, docker-deployable** service implementing the full assignment
-contract. They are benchmarked against the root **baseline / control** (the
-TypeScript + better-sqlite3 + rule-based service at the repo root) using the
-HTTP harness in [`../bench`](../bench).
+> **The shipped deliverable is the `opinionated` build, which now lives at the
+> repo root** (`/README.md`, `/src`, `/docker-compose.yml`). This folder holds the
+> **supporting builds** kept for the benchmark comparison — they are *not* the
+> submission. Each is a self-contained, docker-deployable service on the same
+> contract, scored by the HTTP harness in [`../bench`](../bench). See the
+> cross-build stack-rank in [`../docs/BENCHMARKS.md`](../docs/BENCHMARKS.md).
 
-| Folder | Design | Dev/bench port |
-|--------|--------|----------------|
-| [`opinionated/`](opinionated) | A strong point of view, executed (see its README). | 8091 |
-| [`simple/`](simple) | Minimal moving parts; readable & inspectable. | 8092 |
-| [`maxxed/`](maxxed) | Kitchen-sink: cover every category. | 8093 |
+| Folder | Role | Design | Dev/bench port |
+|--------|------|--------|----------------|
+| [`baseline/`](baseline) | control | No-LLM floor: TypeScript + better-sqlite3 + rule-based extraction + lexical recall. | 8080 |
+| [`simple/`](simple) | exploration | Minimal moving parts; readable & inspectable. | 8092 |
+| [`maxxed/`](maxxed) | exploration | Kitchen-sink: cover every category. | 8093 |
+| [`mem0-chroma/`](mem0-chroma) | external baseline | Vanilla [mem0](https://github.com/mem0ai/mem0) + Chroma (Python), for stack-ranking against our own designs. | 8095 |
 
-> Root (`/`) is the baseline control on port **8080**.
+> The deliverable (`opinionated`) runs from the repo root on port **8080** via
+> `docker compose up`; the baseline control also targets 8080, so run them one at
+> a time (or override the host port).
 
 ## Shared contract (all folders must satisfy)
 
@@ -20,7 +24,7 @@ HTTP harness in [`../bench`](../bench).
   `GET /health`, `POST /turns`, `POST /recall`, `POST /search`,
   `GET /users/:user_id/memories`, `DELETE /sessions/:session_id`,
   `DELETE /users/:user_id`. Same request/response shapes and status codes as the
-  root baseline (use it as the reference for shapes).
+  repo-root deliverable (use it as the reference for shapes).
 - **`docker compose up`** is the only setup step. Default container port **8080**
   (host port may be overridden via env for parallel runs). Persist across
   `docker compose down && up` via a named volume.
@@ -64,6 +68,6 @@ HTTP harness in [`../bench`](../bench).
 ## References
 
 - Full assignment: [`../ASSIGNMENT.md`](../ASSIGNMENT.md)
-- Reference implementation (shapes, store seam, recall assembly): repo root `src/`
+- Reference implementation / deliverable (shapes, store seam, recall assembly): repo root `src/` (the `opinionated` build)
 - Memory-system ADRs & technique shortlist: [`../docs/research/approaches`](../docs/research/approaches)
 - Benchmark survey & recommendations: [`../docs/research/benchmarks`](../docs/research/benchmarks)

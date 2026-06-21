@@ -1,15 +1,28 @@
-# Boots the memory service. `docker compose up` is the only setup step.
+# Boots the opinionated memory service. `docker compose up` is the only setup step.
+#
+# Default host port is 8080 (the contract default). For PARALLEL runs alongside
+# sibling implementations, override on the host without touching this file:
+#   HOST_PORT=8091 docker compose up --build
 services:
   memory-service:
     build: .
     ports:
-      - "8080:8080"
+      # host:container — override host port via HOST_PORT for parallel benches.
+      - "${HOST_PORT:-8080}:8080"
     environment:
-      MEMORY_DB_PATH: /data/memory.db
-      # Default is the offline baseline; branches switch this to "llm".
-      MEMORY_EXTRACTOR: ${MEMORY_EXTRACTOR:-baseline}
-      MEMORY_RECALLER: ${MEMORY_RECALLER:-baseline}
-      # Optional bearer token + LLM keys. Supplied by the eval harness / .env.
+      MEMORY_DATA_DIR: /data/pg
+      # "live" uses real Anthropic + OpenAI. The eval harness supplies the keys.
+      MEMORY_LLM: ${MEMORY_LLM:-live}
+      # Default Haiku 4.5: measured 76% on LoCoMo (our hardest benchmark) with the
+      # full pipeline, ~1/15 the cost of Opus, and comfortably inside the 60s
+      # /turns budget even when chunked extraction fires on dense turns. Override
+      # with MEMORY_LLM_MODEL=claude-opus-4-8 for maximum quality (slower).
+      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-claude-haiku-4-5-20251001}
+      # Chunked extraction (extract per focused message-window + whole turn): the
+      # single biggest recall lever (LoCoMo 57→67). On by default; set 0 to disable.
+      MEMORY_CHUNK_EXTRACT: ${MEMORY_CHUNK_EXTRACT:-1}
+      # Multi-query retrieval: experimental, measured to not help on LoCoMo. Off.
+      MEMORY_MULTI_QUERY: ${MEMORY_MULTI_QUERY:-0}
       MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -20,11 +33,11 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        - "fetch('http://localhost:'+(process.env.PORT||8080)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
       interval: 10s
       timeout: 3s
-      retries: 10
-      start_period: 5s
+      retries: 15
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

@@ -27,7 +27,7 @@ trap 'kill_ports; for p in $PIDS; do kill "$p" 2>/dev/null || true; done' EXIT
 start() { # name port mq chunk
   local name="$1" port="$2" mq="$3" chunk="$4" attempt pid i
   for attempt in 1 2 3; do
-    ( cd "$REPO/implementations/opinionated" && env MEMORY_DATA_DIR="$DATA/$name" MEMORY_LLM=live \
+    ( cd "$REPO" && env MEMORY_DATA_DIR="$DATA/$name" MEMORY_LLM=live \
         MEMORY_LLM_MODEL="$MODEL" MEMORY_MULTI_QUERY="$mq" MEMORY_CHUNK_EXTRACT="$chunk" \
         MEMORY_LLM_LOG="$REPO/logs/opinionated-$name-llm.csv" PORT="$port" npm start \
         >"/tmp/sweep-srv-$name.log" 2>&1 ) &

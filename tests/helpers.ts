@@ -1,69 +1,54 @@
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { Hono } from "hono";
+/**
+ * Test helpers: build an app over an ephemeral in-memory pglite store with the
+ * deterministic mock provider, and a tiny fetch wrapper over app.fetch.
+ */
 
-// Hermetic + offline: force the deterministic baseline and clear any auth token
-// before the app reads settings.
-process.env.MEMORY_EXTRACTOR = "baseline";
-process.env.MEMORY_RECALLER = "baseline";
-process.env.MEMORY_AUTH_TOKEN = "";
+import { createApp } from "../src/app";
+import { createMockProvider } from "../src/llm/mock";
 
-const { createApp } = await import("../src/app");
-
-export function newDbPath(): string {
-  return join(mkdtempSync(join(tmpdir(), "memsvc-")), "memory.db");
+export async function makeTestApp() {
+  const bundle = createApp({
+    dataDir: "memory://",
+    llm: createMockProvider(),
+    settings: { embeddingDim: 256, authToken: "" },
+  });
+  await bundle.ready;
+  return bundle;
 }
 
-export interface Res {
+export interface Resp {
   status: number;
   body: any;
 }
 
-export class Client {
-  constructor(private app: Hono) {}
-
-  async get(path: string): Promise<Res> {
-    return wrap(await this.app.request(path));
-  }
-  async post(path: string, body: unknown): Promise<Res> {
-    return wrap(
-      await this.app.request(path, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-    );
-  }
-  async postRaw(path: string, body: string): Promise<Res> {
-    return wrap(
-      await this.app.request(path, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body,
-      }),
-    );
-  }
-  async del(path: string): Promise<Res> {
-    return wrap(await this.app.request(path, { method: "DELETE" }));
-  }
-}
-
-async function wrap(r: Response): Promise<Res> {
-  const text = await r.text();
-  let body: any = null;
-  if (text) {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      body = text;
+export function client(app: { fetch: (req: Request) => Response | Promise<Response> }) {
+  async function call(
+    method: string,
+    path: string,
+    body?: unknown,
+    headers?: Record<string, string>,
+  ): Promise<Resp> {
+    const init: RequestInit = {
+      method,
+      headers: { "content-type": "application/json", ...headers },
+    };
+    if (body !== undefined) init.body = typeof body === "string" ? body : JSON.stringify(body);
+    const res = await app.fetch(new Request(`http://test${path}`, init));
+    const text = await res.text();
+    let parsed: any = null;
+    if (text) {
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = { raw: text };
+      }
     }
+    return { status: res.status, body: parsed };
   }
-  return { status: r.status, body };
-}
-
-/** A client over a fresh temp DB (or a given path, to simulate restart). */
-export function client(dbPath: string = newDbPath()): { c: Client; dbPath: string } {
-  const { app } = createApp(dbPath);
-  return { c: new Client(app), dbPath };
+  return {
+    get: (p: string, h?: Record<string, string>) => call("GET", p, undefined, h),
+    post: (p: string, b?: unknown, h?: Record<string, string>) => call("POST", p, b, h),
+    del: (p: string, h?: Record<string, string>) => call("DELETE", p, undefined, h),
+    raw: call,
+  };
 }

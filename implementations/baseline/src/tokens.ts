@@ -3,7 +3,8 @@
  *
  * The recall contract asks us to respect `max_tokens` approximately ("don't blow
  * past it by 2x"). The ~4-chars-per-token heuristic is well within tolerance for
- * English prose and avoids a heavy tokenizer dependency.
+ * English prose and avoids a heavy tokenizer dependency; swap in an exact
+ * tokenizer later as a benchmarked variant if needed.
  */
 
 const CHARS_PER_TOKEN = 4;

@@ -1,18 +1,35 @@
+# The Dockerfile copies only package*.json, tsconfig.json and src/. Keep the
+# build context tiny by excluding everything else in this monorepo root.
 .git
 .github
+.claude
 node_modules
 dist
 coverage
+*.tsbuildinfo
+
+# secrets / local env (keys come in via the container environment)
 .env
 .env.*
-!.env.example
+
+# sibling builds, benchmarks, docs, logs — none are part of the image
+implementations
+bench
+docs
+logs
+scripts
+tests
+fixtures
+*.md
+COMPLIANCE.md
+
+# local data / volumes
 data
 *.db
 *.sqlite*
-*.db-shm
-*.db-wal
-bench/results
-docs
-implementations
-.claude
-*.tsbuildinfo
+
+# python / tooling caches
+__pycache__
+.pytest_cache
+.ruff_cache
+.pre-commit-config.yaml

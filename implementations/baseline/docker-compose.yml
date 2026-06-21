@@ -1,0 +1,31 @@
+# Boots the memory service. `docker compose up` is the only setup step.
+services:
+  memory-service:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      MEMORY_DB_PATH: /data/memory.db
+      # Default is the offline baseline; branches switch this to "llm".
+      MEMORY_EXTRACTOR: ${MEMORY_EXTRACTOR:-baseline}
+      MEMORY_RECALLER: ${MEMORY_RECALLER:-baseline}
+      # Optional bearer token + LLM keys. Supplied by the eval harness / .env.
+      MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - memory-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://localhost:8080/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  memory-data:

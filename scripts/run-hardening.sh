@@ -54,7 +54,7 @@ ensure_up() { # name dir port env...
 }
 
 echo "model=$MODEL judge=${SUITE_JUDGE_MODEL:-claude-opus-4-8}  N: lme=$LME_N ruler=$RULER_N(hay=$RULER_HAY) locomo=$LOCOMO_N"
-ensure_up opinionated "$REPO/implementations/opinionated" 8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_MULTI_QUERY="${MEMORY_MULTI_QUERY:-}" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
+ensure_up opinionated "$REPO" 8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_MULTI_QUERY="${MEMORY_MULTI_QUERY:-}" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
 ensure_up simple      "$REPO/implementations/simple"      8092 MEMORY_DATA_DIR="$DATA/simple" MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/simple-llm.csv"
 ensure_up maxxed      "$REPO/implementations/maxxed"      8093 MEMORY_DB_DIR="$DATA/maxxed" MEMORY_PIPELINE=llm MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/maxxed-llm.csv"
 

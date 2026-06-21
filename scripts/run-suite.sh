@@ -51,8 +51,8 @@ MODEL="${MEMORY_LLM_MODEL:-claude-opus-4-8}"
 # Export so the run.ts cost calculator prices at the same model the servers use
 # (the runner reads MEMORY_LLM_MODEL to pick the per-model price tier).
 export MEMORY_LLM_MODEL="$MODEL"
-ensure_up baseline    "$REPO"                              8080 MEMORY_DB_PATH="$DATA/baseline.sqlite"
-ensure_up opinionated "$REPO/implementations/opinionated"  8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
+ensure_up baseline    "$REPO/implementations/baseline"                              8080 MEMORY_DB_PATH="$DATA/baseline.sqlite"
+ensure_up opinionated "$REPO"  8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/opinionated-llm.csv"
 ensure_up simple      "$REPO/implementations/simple"       8092 MEMORY_DATA_DIR="$DATA/simple" MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/simple-llm.csv"
 ensure_up maxxed      "$REPO/implementations/maxxed"       8093 MEMORY_DB_DIR="$DATA/maxxed" MEMORY_PIPELINE=llm MEMORY_LLM_MODEL="$MODEL" MEMORY_LLM_LOG="$REPO/logs/maxxed-llm.csv"
 

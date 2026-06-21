@@ -8,7 +8,7 @@
  * and citations.
  *
  * Run:
- *   set -a; . ../../.env; set +a
+ *   set -a; . .env; set +a
  *   MEMORY_LLM=live PORT=8091 npx tsx scripts/smoke.ts
  *
  * Requires OPENAI_API_KEY and ANTHROPIC_API_KEY in the environment.

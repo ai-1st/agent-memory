@@ -1,9 +1,9 @@
 {
-  "description": "Self-eval fixture for the opinionated memory service. Covers the spec's hard cases plus the design-specific CONTRADICTION case (likes oranges -> prefers apples, expecting the change to be narrated). Probe matching mirrors the bench harness: expect_any / expect_all / expect_empty over the lowercased recall context.",
+  "description": "Self-eval fixture: scripted multi-session conversations + probe queries with expected facts. Mirrors the spec's hard cases (fact evolution, implicit facts, multi-hop, noise/cold-start).",
   "scenarios": [
     {
-      "name": "relocation_and_implicit_pet",
-      "user_id": "fx-alice",
+      "name": "relocation_and_pet",
+      "user_id": "fixture-alice",
       "turns": [
         {
           "session_id": "alice-s1",
@@ -48,7 +48,7 @@
     },
     {
       "name": "job_change_supersession",
-      "user_id": "fx-bob",
+      "user_id": "fixture-bob",
       "turns": [
         {
           "session_id": "bob-s1",
@@ -81,68 +81,35 @@
       ]
     },
     {
-      "name": "preference_contradiction",
-      "user_id": "fx-carol",
+      "name": "preferences",
+      "user_id": "fixture-carol",
       "turns": [
         {
           "session_id": "carol-s1",
           "timestamp": "2025-02-01T08:00:00Z",
           "messages": [
-            {
-              "role": "user",
-              "content": "Honestly I really like oranges, I eat them every morning."
-            },
-            { "role": "assistant", "content": "Citrus is a great way to start the day!" }
-          ]
-        },
-        {
-          "session_id": "carol-s2",
-          "timestamp": "2025-04-10T08:00:00Z",
-          "messages": [
-            {
-              "role": "user",
-              "content": "These days I prefer apples, oranges feel too acidic now."
-            },
-            { "role": "assistant", "content": "Apples are a solid choice." }
+            { "role": "user", "content": "I'm vegetarian and allergic to shellfish." },
+            { "role": "assistant", "content": "Got it, I'll keep that in mind." }
           ]
         }
       ],
       "probes": [
         {
-          "query": "Which fruit does the user prefer?",
+          "query": "Any dietary restrictions?",
           "session_id": "carol-probe",
-          "expect_any": ["apple"]
-        },
-        {
-          "query": "Has the user's fruit preference changed over time?",
-          "session_id": "carol-probe",
-          "expect_all": ["apple", "orange"]
+          "expect_any": ["vegetarian", "shellfish"]
         }
       ]
     },
     {
-      "name": "noise_resistance_cold",
-      "user_id": "fx-dave",
-      "turns": [
-        {
-          "session_id": "dave-s1",
-          "timestamp": "2025-03-01T10:00:00Z",
-          "messages": [
-            { "role": "user", "content": "My name is Dave and I am allergic to shellfish." },
-            { "role": "assistant", "content": "Good to know, Dave." }
-          ]
-        }
-      ],
+      "name": "cold_user_noise",
+      "user_id": "fixture-nobody",
+      "turns": [],
       "probes": [
         {
-          "query": "What is the user's favourite programming language?",
-          "session_id": "dave-probe",
+          "query": "What is the user's favorite Formula 1 team?",
+          "session_id": "nobody-probe",
           "expect_empty": true
-        },
-        {
-          "query": "Does the user have any food allergies?",
-          "session_id": "dave-probe",
-          "expect_any": ["shellfish"]
         }
       ]
     }

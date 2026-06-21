@@ -3,7 +3,8 @@
  *
  * Lenient on inputs (unknown keys stripped, roles free-form) so the service is
  * resilient to odd-but-valid payloads, while strict enough that genuinely
- * malformed requests fail validation (-> 422) instead of crashing.
+ * malformed requests fail validation (-> 422) instead of crashing. The shapes
+ * are deliberately identical to the root baseline for contract parity.
  */
 
 import { z } from "zod";
@@ -46,3 +47,6 @@ export interface Citation {
   score: number;
   snippet: string;
 }
+
+export const MEMORY_TYPES = ["fact", "preference", "opinion", "event"] as const;
+export type MemoryType = (typeof MEMORY_TYPES)[number];

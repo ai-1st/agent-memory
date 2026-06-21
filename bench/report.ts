@@ -30,10 +30,15 @@ interface Impl {
 }
 
 const IMPLS: Impl[] = [
-  { name: "baseline", dir: REPO, url: process.env.URL_BASELINE ?? "http://localhost:8080" },
   {
+    name: "baseline",
+    dir: join(REPO, "implementations/baseline"),
+    url: process.env.URL_BASELINE ?? "http://localhost:8080",
+  },
+  {
+    // The opinionated build is the shipped deliverable and now lives at the repo root.
     name: "opinionated",
-    dir: join(REPO, "implementations/opinionated"),
+    dir: REPO,
     url: process.env.URL_OPINIONATED ?? "http://localhost:8091",
   },
   {

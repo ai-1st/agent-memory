@@ -26,8 +26,8 @@ start() { # name dir port env...
   echo "started $name on :$port"
 }
 
-start baseline    "$REPO"                              8080 MEMORY_DB_PATH="$DATA/baseline.sqlite"
-start opinionated "$REPO/implementations/opinionated"  8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live
+start baseline    "$REPO/implementations/baseline"                              8080 MEMORY_DB_PATH="$DATA/baseline.sqlite"
+start opinionated "$REPO"  8091 MEMORY_DATA_DIR="$DATA/opinionated" MEMORY_LLM=live
 start simple      "$REPO/implementations/simple"       8092 MEMORY_DATA_DIR="$DATA/simple"
 start maxxed      "$REPO/implementations/maxxed"       8093 MEMORY_DB_DIR="$DATA/maxxed" MEMORY_PIPELINE=llm
 
