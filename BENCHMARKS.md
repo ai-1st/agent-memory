@@ -1,7 +1,8 @@
 # Benchmark suite results
 
-Generated from the benchmark suite ([`bench/suite/`](bench/suite)) — four
-public/standard benchmarks plus one purpose-built fixture, all normalized to one
+Generated from the benchmark suite ([`bench/suite/`](bench/suite)) — three
+public/standard benchmarks (LongMemEval, RULER, LoCoMo) plus three purpose-built
+fixtures (custom, contradiction, adversarial), all normalized to one
 HTTP contract and scored by an **LLM judge** (Claude Opus 4.8) on the **mem0
 three-axis card**: accuracy-by-category / tokens-per-recall / p50–p95 latency,
 with a **cost** axis added (token spend × per-model price). Reproduce with
@@ -19,8 +20,7 @@ builds too** (N=100, one conversation), and a new **`adversarial`** fixture targ
 the discriminating cases. N (probes) is shown next to each cell; small N ⇒ ranking
 signal, not a precise rate. See the
 [probe-discrimination audit](research/probe-discrimination-audit.md) for why N
-matters and the [Reading](#reading--updated-after-the-discriminating-runs-n40-locomo-on-llm-builds-adversarial)
-section for the conclusion.
+matters and the [Bottom line](#bottom-line) for the conclusion.
 
 **External baseline.** A fifth service — **vanilla mem0 + Chroma** on the same
 model/embeddings/judge — is scored alongside our builds as an off-the-shelf
@@ -37,7 +37,7 @@ We scanned every service + run log for rate limits and errors:
   the post-fix re-run):
   - `opinionated`'s 3× HTTP 500 on recall (`util.inspect` throwing in a catch's
     logger) — fixed with a safe `errStr()` logger + guards. Its `ruler-niah` score
-    went **33% (bug artifact) → 100%**.
+    recovered from a **33% bug artifact** to its true ~80%.
   - `maxxed`'s 5× extraction schema-mismatch → silent rule fallback — fixed with
     `z.preprocess` normalization + retry + repair.
 - **Cost is model-aware** — each card is priced at the model it ran on
@@ -239,32 +239,28 @@ stretch, on a Haiku-class model and a job-challenge-scope codebase. simple (50%)
 maxxed (30%) are capped by their contracts ("stay simple" / staged pipeline that
 floods under coverage), which is itself the documented finding.
 
-## Reading — UPDATED after the discriminating runs (N=40, LoCoMo on LLM builds, adversarial)
+## Bottom line
 
-> An earlier version of this section concluded "`simple` is the standout /
-> `opinionated` has no accuracy premium." **That was an artifact of saturated,
-> low-N probes.** Once we raised N and added discriminating fixtures, the picture
-> changed — see the [probe-discrimination audit](research/probe-discrimination-audit.md)
-> and [failure analysis](research/failure-analysis-and-action-plan.md).
+After the LoCoMo campaign and the external-baseline comparison:
 
-- **On saturated/clustered benchmarks the builds tie.** longmemeval at N=40:
-  simple 75 / opinionated 77.5 / maxxed 70 (a 7.5-pt cluster, not the
-  simple-93/maxxed-73 the N=15 run implied). LoCoMo (N=100): baseline 15 → simple
-  24 → maxxed 26 → opinionated 27 — all LLM builds ~10–12 pts over the floor.
-- **On the adversarial set (which actually discriminates), `opinionated` wins:**
-  baseline 20 → simple 63 → maxxed 70 → **opinionated 80**. Its link-following
-  recall takes `multihop_decoy` 4/4, `temporal_duration` 2/2, `stale_trap` 3/3 —
-  so the link-graph design **does** earn its 3–8× cost on hard reasoning. Its one
-  backfire is `slot_collision` 2/3 (keep-both is wrong for a plain correction).
-- **Shared weaknesses (all builds):** temporal arithmetic/ordering, full A→B→C
-  history (the `prior[0]`-only breadcrumb), and multi-hop chaining for simple.
-- **Cost ranking is call-count-bound, not per-token** — opinionated's per-fact
-  reconcile fan-out makes it the most expensive build regardless of model.
+- **`opinionated` leads on the hard, realistic benchmarks** — LoCoMo **76%**
+  (vs simple 50, maxxed 30) and adversarial **80%**. Its link-following recall
+  takes `multihop_decoy` 4/4, `temporal_duration` 2/2, `stale_trap` 3/3, so the
+  link-graph earns its 3–8× cost on multi-hop / temporal / contradiction
+  reasoning. Its one backfire is `slot_collision` (keep-both is wrong for a plain
+  correction).
+- **`simple` is the cost/latency sweet spot** — it ties or leads on the saturated
+  sets (custom 100, LongMemEval 93, RULER 100) at ~1/7 the cost, and is never the
+  worst LLM build on any benchmark.
+- **`maxxed` is the middle** — broad coverage, but its staged rerank→compact
+  pipeline floods under the coverage lever (the documented −11 on LoCoMo).
+- **vs off-the-shelf mem0 + Chroma** (same model + judge): we tie or beat it on
+  five of six benchmarks, and `opinionated` more than doubles it on LoCoMo
+  (76 vs 30) — the date-anchoring payoff vanilla mem0 has no equivalent of.
+- **Shared weakness (all builds):** temporal arithmetic/ordering and full
+  A→B→C history chains (the `prior[0]`-only breadcrumb).
 
-**Revised take:** no single build dominates. `simple` is the best cost/latency for
-clustered workloads; `opinionated` is the accuracy leader on hard reasoning and
-worth developing further; `maxxed` is the layer-it-on middle. Next: the
-per-implementation [improvement action plan](research/failure-analysis-and-action-plan.md).
-
-_Caveats: longmemeval N=40, ruler N=30, LoCoMo N=100, adversarial N=30, custom N=12,
-contradiction N=10 (all Haiku). Cost is a list-price estimate excluding the Opus judge._
+Deeper analyses: [probe-discrimination audit](research/probe-discrimination-audit.md),
+[failure analysis](research/failure-analysis-and-action-plan.md), and
+[locomo-sota-techniques](research/locomo-sota-techniques.md). _Per-benchmark N is
+shown in the Axis 1 table; cost is a Haiku list-price estimate excluding the Opus judge._
