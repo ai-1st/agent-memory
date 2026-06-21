@@ -1,294 +1,205 @@
-# Changelog
+# Changelog — opinionated memory service
 
-Iteration log for the memory service. One entry per significant design iteration:
-what changed, why, what we observed, what's next. Newest first.
-
-## Plan — four implementations, one benchmark
-
-**v0 (below) is the starting point**: a deployable, contract-complete control.
-From here we explore three independent designs, each in its own folder, then
-benchmark all four against each other to see where we stand.
-
-**The four implementations**
-
-| # | Name | Location | Idea |
-|---|------|----------|------|
-| 1 | **Baseline / control** | `/` (root) | The cheap, deterministic, no-LLM floor. TypeScript + better-sqlite3 + rule-based extraction + lexical recall. Stays as-is — it tells us what the floor is. |
-| 2 | **Opinionated** | `implementations/opinionated` | A strong point of view, executed: synchronous extract→reconcile, context-enriched facts, contradictions linked (not deleted) and narrated. |
-| 3 | **Simple & transparent** | `implementations/simple` | Minimal moving parts, readable & inspectable — the design a maintainer groks in five minutes. |
-| 4 | **Maxxed** | `implementations/maxxed` | Kitchen-sink: extract→reconcile, hybrid + RRF + LLM rerank, entity-graph multi-hop, temporal reasoning. |
-
-**Shared stack for the three explorations** (the v0 control keeps its
-SQLite/rule-based stack so we can measure what the additions buy us):
-
-- **Runtime:** TypeScript + Node + Hono
-- **LLM/embeddings interface:** **Vercel AI SDK**
-- **Store:** pglite (`@electric-sql/pglite`, embedded Postgres) + vector extension
-- **Embeddings:** OpenAI `text-embedding-3-large` (3072-dim)
-- **LLM:** Claude **Opus 4.8** (`claude-opus-4-8`) for extraction / reconciliation / recall
-- **Cost:** **not** optimizing for LLM cost or latency yet — chase the quality ceiling first.
-
-**How we compare:** the HTTP benchmark harness (`bench/`) plus a shared fixture,
-scored by an LLM judge. Each implementation appends its own entries (in its folder
-CHANGELOG) as it iterates; the winner (or hybrid of winners) gets promoted to the
-root baseline.
+The design story, newest first. Each entry: what changed, why, what I observed.
 
 ---
 
-## v5 — Are the probes too easy? Discrimination audit → adversarial set → driving LoCoMo up
+## v7 — Winning LoCoMo: date-anchoring → coverage → chunked extraction (27→67%)
 
-This arc started from a sharp question: the good builds were scoring near 100% on
-most benchmarks — is that because they're *good*, or because the probes can't
-*discriminate*? Everything below answers that, then acts on it. (Git: `d63b044`,
-`2351e41`, `3f0143b`, `c2636d8`, `18b1008`, `d5075a5`, `4d85994`, `f66ebed`,
-`41344f1`, `ad25ab1`, `6a9125a`, `fa17440`, …)
+**What changed:** A focused campaign to lift the realistic long-conversation
+benchmark (LoCoMo), where the build started at 27% (75% of probes failing). Each
+lever was benchmarked (Haiku, N=100) before keeping it.
 
-**1. Probe-discrimination audit (`d63b044`) + strict pass-floor (`2351e41`).**
-Verdict: *partly* too easy, but the dominant defect is **sample size, not
-difficulty**. A perfect 3/3 cell is statistically consistent with a true rate of
-44% (Wilson); ruler at N=6 hid a ~40-pt recall hole that N=30 exposed. The judge is
-lenient but secondary — only ~2.5% of good-build passes flip under a `score≥0.8`
-floor (added to the card so this is now measurable). *Why:* before improving
-anything, make sure the ruler is trustworthy.
+1. **Date-anchoring at extraction.** The turn timestamp now flows into extraction
+   and the model resolves "last Saturday" → an absolute `YYYY-MM-DD` baked into the
+   value. *Why:* recall and the judge see only the stored fact, not the turn clock —
+   a bare relative date is unanswerable. Temporal 16→46, overall 27→42.
+2. **Coverage is the dominant lever.** The residual failures were "no record of X
+   documented" — the fact was never extracted or never retrieved, not mis-reasoned.
+   An exhaustive-extraction instruction + wider recall (semantic 12→24, recent 8→12)
+   took it 42→57.
+3. **Chunked extraction (the winner).** For long multi-message turns, extract from
+   each focused message-window AND the whole turn, then semantic-dedup the
+   candidates (a small window surfaces one-off details the single 20-message pass
+   drops). 57→**67%**, now default-on. This pairs with the per-fact reconcile, which
+   absorbs the extra candidates.
+4. **Multi-query retrieval — explored, measured to NOT help.** An LLM proposes
+   follow-up queries from the first-round facts and merges results. On LoCoMo: 55 vs
+   57 — the wider recall already covers it; the extra call is cost+noise. Kept
+   env-gated off (`MEMORY_MULTI_QUERY`). A clean negative result, not dead code.
+5. **Temporal-narration prompt (iter-2) — measured, REVERTED.** Instructing recall
+   to "surface every dated fact" over-crowded the compaction and *hurt* recall
+   (87→68); net 67→62. A reasonable hypothesis the benchmark rejected.
+6. **Deeper coverage (iter-3, kept).** Smaller chunks (`CHUNK_SIZE` 6→4) + wider
+   recall (`SEMANTIC_LIMIT` 24→32) — the single rerank-and-write absorbs the larger
+   set, so it converts to accuracy. **67→76** (multi-hop 53→72: more bridge facts in
+   the pool).
 
-**2. Adversarial set + LoCoMo on the LLM builds (`3f0143b`, `c2636d8`, `18b1008`).**
-Added a 30-probe `adversarial` fixture (stale-fact traps, multi-hop with decoys,
-abstention-under-pressure, same-slot collisions) and ran LoCoMo on the LLM builds
-(was baseline-only). This **reversed the earlier "simple wins" read**: on probes
-that actually discriminate, opinionated leads (adversarial 80% vs 63–70%; multi-hop
-4/4) — its link-graph earns its cost where reasoning is hard. The earlier "no
-premium" conclusion was an artifact of saturated, low-N tests.
+**Why this fits the build's identity:** every change rides on the existing
+extract → per-fact reconcile → LLM-rerank/compaction spine. The reranker is exactly
+what lets coverage pay off (it triages the larger candidate set to budget) — the
+same lever *backfired* on the reranker-less `simple` build.
 
-**3. Driving LoCoMo up — the real engineering (`d5075a5` → `fa17440`).** LoCoMo
-(realistic long multi-session) was the worst benchmark (~25%, 75% fail). Traced in
-code: failures cluster in **temporal** (~90% fail) and **multi-hop** (~83%), and the
-turn timestamp was being *dropped before extraction*. Levers, each benchmarked
-(Haiku, N=100):
-- **Date-anchoring** (`d5075a5`, all three builds): thread the turn timestamp into
-  extraction and resolve "last Saturday" → an absolute date. opinionated temporal
-  16→46, overall 27→42. *Helps only where recall uses the dates* — it regressed
-  maxxed (compaction strips them) and barely moved simple.
-- **Coverage** is the dominant lever (the residuals were "no record of X
-  documented" — missing facts, not bad reasoning). Exhaustive-extraction prompt +
-  wider recall took opinionated 42→57; **chunked extraction** (extract per focused
-  message-window AND the whole turn, then semantic-dedup) took it **57→67**
-  (`ad25ab1`, default-on in `fa17440`). **Multi-query retrieval** (`41344f1`) was
-  explored and measured to *not* help (55 vs 57) — the wider recall already covers
-  it; kept env-gated off.
-- **SOTA research** (`6a9125a`, [locomo-sota-techniques](research/locomo-sota-techniques.md)):
-  Mem0 hits 92.5 on LoCoMo with entity-linking + multi-signal fusion (multi-hop)
-  and date-anchoring + timeline summarization (temporal) — confirming our direction.
-
-Full detail in [BENCHMARKS.md](docs/BENCHMARKS.md),
-[failure-analysis-and-action-plan.md](docs/research/failure-analysis-and-action-plan.md),
-and [probe-discrimination-audit.md](docs/research/probe-discrimination-audit.md).
-Per-build improvement iterations (3 each, maxxed as the playground) continue below
-as they land.
+**Observed:** LoCoMo **27 → 42 → 57 → 67 → 76** (strict@0.8: 70%). Temporal 16→70,
+multi-hop 13→72. The coverage thesis — get the fact into the candidate set the
+reranker scores — is the whole game on long multi-session data, and opinionated's
+single rerank-and-write is exactly the recall shape that lets coverage pay off
+(the same lever floods `simple` and `maxxed`, which need selection instead).
 
 ---
 
-## v4 — Robust, resumable, parallel bench harness
+## v6 — Make `reason` earn its keep (CoT + narrated contradictions)
 
-**What changed:** Reworked the suite runner (`bench/suite/runner.ts` + `run.ts`)
-so a multi-hour run survives a kill and uses the LLM rate budget efficiently.
-Motivated by a real incident: a long background run got SIGTERM'd mid-benchmark
-and lost everything, because the old runner ingested-then-probed-then-wrote one
-card only at the very end.
+**What changed:** The per-op `reason` field in the reconcile schema used to sit
+*last* and was essentially vestigial — it was emitted after the decision (so it
+couldn't influence it), stored only as the note on contradiction links, and never
+read back. Two changes fixed that:
+1. **`reason` moved to the FIRST field** of the reconcile op (`schemas.ts`), so the
+   model writes its justification before choosing `op`/`value` — real
+   chain-of-thought that conditions the decision instead of a post-hoc label. The
+   reconcile prompt now instructs "reason first".
+2. **The contradiction link note is surfaced in recall.** Previously recall
+   annotated conflicts as `[CONTRADICTS id=…]` (opaque ids); now it injects the
+   conflicting fact's value *and* the stored reason, e.g. `[CONTRADICTS "User
+   previously liked oranges" — oranges now too acidic]`, and the compaction prompt
+   narrates the change **and the why** ("…now prefers apples — finds oranges too
+   acidic") rather than just *that* a change happened.
 
-- **Resume via JSONL journal.** Every completed ingest and every judged probe is
-  appended to `bench/results/suite/journals/<adapter>__<label>.jsonl` as it
-  happens. `--resume` loads the journal, verifies the user still has data, and
-  skips finished work — a relaunch continues instead of restarting. The journal
-  is also the progress log, and a partial card can be rebuilt from it. Validated
-  end-to-end: a resume run skipped all completed probes and made **0** new judge
-  calls.
-- **Parallelism with a cap.** Ingestion runs concurrently across scenarios
-  (independent users; turns stay sequential within a user for supersession
-  order), and probes run concurrently — both under `SUITE_CONCURRENCY` (default
-  5) to stay under provider rate limits.
-- **Retry/backoff.** `httpRetry` retries transient 429/529/network failures with
-  quadratic backoff; non-idempotent `/turns` only retries on explicit rejections
-  (429/529), never on an ambiguous network error, to avoid double-ingest.
-- **Cost across resume.** The pre-run metrics baseline is journaled, so cost is a
-  true full-run delta even after a resume (with a counter-reset guard).
+**Why:** an LLM "reason" only improves a decision if it precedes it; and a stored
+note that nothing reads is wasted output tokens. This turns the field from dead
+weight into (a) a quality lever on the reconcile decision and (b) the
+contradiction *narration* the design always intended.
 
-**Why:** the harness is now safe to run unattended for hours and cheap to
-re-drive after an interruption — a prerequisite for the larger discriminating
-runs (LoCoMo on the LLM builds, adversarial probes, higher N).
+**Observed:** offline suite green; recall now explains the cause of a reversal, not
+just its existence.
 
 ---
 
-## v3 — Full matrix re-run (bugs fixed), Haiku vs Opus, model-aware cost, contradiction fixture
+## v5 — Live wiring against Claude Opus 4.8 (the `temperature` trap)
 
-**What changed:**
-- **Re-ran the whole suite after fixing the two v2 bugs** (opinionated's recall 500,
-  maxxed's extraction schema-mismatch). opinionated's `ruler-niah` recovered
-  **33% → 100%** on Opus; the v2 "bug artifact" caveats are now retired.
-- **Ran every benchmark on both Opus 4.8 and Haiku 4.5** (the chat model is a
-  container parameter, `MEMORY_LLM_MODEL`), with **5× the probe count** on the
-  cheap Haiku pass. Finding: **Haiku holds accuracy within a few points of Opus**
-  on a larger sample — a viable default.
-- **Made the cost axis model-aware.** `bench/suite/runner.ts` previously priced
-  *every* card at Opus rates, overstating Haiku ~10–15×. Added `priceFor(model)`
-  (opus/sonnet/haiku tiers), recorded `pricing_model`/`pricing_rates` on each card,
-  and a `restamp-cost.ts` to correct already-written cards. Both run scripts now
-  export `MEMORY_LLM_MODEL` so the runner prices at the model the servers used.
-- **Built the `contradiction` fixture** (`bench/suite/adapters/contradiction.ts`)
-  to test opinionated's signature link-don't-supersede thesis head-on, and a
-  port-safe `scripts/run-contradiction.sh` (never broad-pkills).
+**What changed:** Ran the first real end-to-end smoke (real Anthropic + OpenAI
+keys) on host port 8091. Hit a hard 400 from the API: ``temperature is
+deprecated for this model``. Root cause: `claude-opus-4-8` rejects the
+`temperature` sampling parameter, but Vercel AI SDK v4's core injects
+`temperature: 0` by default (a documented v4 behavior, slated for removal in v5)
+even when you don't set it. The installed `@ai-sdk/anthropic` (1.2.12) only
+strips temperature when the *old* budget-style `thinking` block is enabled —
+which this model also rejects — so neither knob alone fixes it.
 
-**What we observed:**
-- **`simple` is the standout** on every benchmark and both models — top-or-tied
-  accuracy, lowest cost/latency, most Haiku-robust (the tradeoff is larger recall
-  context). `maxxed` matches it on easy benchmarks but degrades most under Haiku.
-- **`opinionated`'s per-fact reconcile fan-out is the cost driver** — 3–8× more LLM
-  calls than `simple` (1101 vs 400 on ruler, 290 vs 34 on longmemeval) for no
-  accuracy premium. Haiku collapses absolute cost (worst card $7.12 → $2.56) but
-  not the ranking (cost is call-count-bound, not per-token).
-- **The contradiction fixture did NOT prove opinionated ahead.** The reason-as-CoT
-  change (opinionated v6) fixed its tension probes to a perfect 5/5 with the richest
-  narration, but it nets 90% (over-narrated one unsettled fact as "finalized",
-  failing a control probe), while **`simple` and `maxxed` both hit 100% at 1/7 and
-  1/2 the cost**. The live extractor files conflicting statements under different
-  keys, so the supersede builds surface both sides anyway — defeating the fixture's
-  attempt to isolate opinionated's edge.
+**Why this approach:** Rather than pin SDK versions or fight the default, I strip
+`temperature` at the `fetch` boundary of the Anthropic provider. It's
+version-robust (works regardless of how the SDK constructs the body) and isolated
+to one place. Determinism is steered by the prompts + structured-output schemas
+instead.
 
-**Verdict / what's next:** if we shipped one, **`simple` on Haiku**, grafting in
-opinionated's narrated-contradiction idea only where a use case needs the prior side
-surfaced. Full numbers in [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md). Remaining gaps:
-LoCoMo on the LLM builds (a multi-hour batch) and larger N on the standard
-benchmarks for the LLM builds.
+**Result:** Live smoke fully green. Real extraction produced exactly the
+context-enriched, self-contained facts the design targets, e.g.:
+- `[fact] location = "User lives in Berlin"` + `event:moved_to_berlin = "User
+  moved to Berlin from NYC in early February 2025"`
+- `[fact] pet:biscuit = "User has a pet (likely a dog) named Biscuit"` (implicit,
+  from "walking Biscuit")
+- The **contradiction**: `preference:fruit = "User currently prefers apples over
+  oranges"` with a two-way `CONTRADICTS` link to "User really likes oranges", and
+  recall narrated: *"User previously really liked oranges but now prefers apples,
+  and finds oranges too acidic now."*
+- Multi-hop "what city does the user with the dog named Biscuit live in?" →
+  Berlin + Biscuit. Noise probe (favourite programming language) → empty.
+
+**Observed wart:** the live model sometimes emits two rows for one concept with
+different `type` (a `preference` and an `opinion` both keyed
+`preference:oranges`). Linking still works; logged as mild over-extraction in the
+README rather than chased down.
 
 ---
 
-## v2 — Benchmark suite (LongMemEval / LoCoMo / RULER-NIAH / custom)
+## v4 — Offline determinism: mock provider + the noise/morphology fixes
 
-**What changed:** Built a reusable suite ([`bench/suite/`](bench/suite)) — a
-normalized Scenario format + Opus-judged runner computing the mem0 three-axis card
-(accuracy-by-category / tokens-per-recall / p50–p95 latency). Adapters: LongMemEval
-(real `oracle`, 500 instances), LoCoMo (real `locomo10.json`, CC BY-NC), RULER/NIAH
-(deterministic length-scalable generator), and custom (the assignment scenarios).
-Developed via parallel background agents; datasets stay git-ignored. Added
-[`scripts/run-suite.sh`](scripts/run-suite.sh), which runs every benchmark × all
-four implementations as **concurrent** sequences (collapses the LLM phase to the
-slowest build instead of the sum).
+**What changed:** Built the deterministic mock LLM provider so the entire
+pipeline runs offline in CI, and got the fixture suite to green.
 
-**Why:** the v1 comparison used a 12-probe custom fixture only — too small to
-separate the LLM builds. The suite adds real long-memory datasets + a synthetic
-volume/noise generator, scored like the private eval, across the rubric categories.
+**Why:** The contract tests must run with no network/keys, and I wanted a tight
+iteration loop. The mock is a transparent rule engine that emits the *same*
+Zod-typed objects the live model would, exercising every real code path (parallel
+reconcile, link creation, link-following recall, budget guard, citations).
 
-**Result** (bounded subset; full table: [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)):
-the baseline floor is genuinely low on realistic data — **LoCoMo 10%, LongMemEval
-45%** (vs ~ms latency) — which is the argument for the LLM builds. On the tractable
-subset, **simple** and **maxxed** lead; **opinionated** matches on custom/longmemeval
-but has the heaviest ingest. Cost shapes: opinionated costliest ingest (~16–24 s/turn,
-p95 ~47 s), maxxed costliest recall (~7–9 s, p95 ~41 s), simple the balance.
+**What I observed (and fixed), running `quality.test.ts` after each change:**
+- *8/9 → contradiction miss.* The full-sentence case ("I really like oranges" →
+  "These days I prefer apples, oranges feel too acidic now") wasn't linking,
+  because apples/oranges share no token, so my "same topic, opposite sentiment"
+  rule never fired. Fix: marker-driven contradiction — a reversal word
+  (`prefer/now/instead/used to`) plus a tiny domain lexicon (oranges and apples
+  are both `fruit`) triggers `CONTRADICT`.
+- *Noise resistance failing.* "favourite programming language" returned a generic
+  profile instead of empty. Fix: a noise gate — if the query has real tokens but
+  nothing (lexical overlap, semantic similarity, or a contradiction link) is
+  relevant, return empty context.
+- *Allergy recall then broke under the noise gate.* "food allergies" vs "allergic
+  to shellfish" share no exact token, so the gate wrongly fired. Fix: a crude
+  suffix stemmer in the mock's tokenizer ("allergies"→"allerg",
+  "allergic"→"allerg") plus surfacing the real pgvector similarity score into the
+  candidate block so the gate can use semantic relevance, not just lexical.
 
-**Validity (checked + documented, NOT fixed per direction):** no rate limiting
-(0 throttle signatures, 0 judge errors). Two real bugs found and left as caveats —
-`opinionated` 3× HTTP 500 (`TypeError ... reading 'value'`) which voids its
-ruler-niah number (empty recall), and `maxxed` 5× extraction schema-mismatch →
-silent rule fallback (mild understatement). LoCoMo is **baseline-only** here
-(full-conversation LLM ingestion is a separate long batch). Small N on the LLM
-longmemeval/ruler runs.
-
-**Next:** fix the two bugs; run LoCoMo (and larger N) against the LLM builds for a
-clean comparison; then decide which design to promote.
+**Result:** **9/9** fixture probes pass offline; **19/19** tests green;
+`tsc`/`biome` clean. (These mock fixes are scoped to the mock — the live model
+handles morphology and topic relatedness natively; v5 confirmed it does better.)
 
 ---
 
-## v1 — Three explorations built + shared LLM-judged comparison
+## v3 — Contradictions are linked, not deleted
 
-**What changed:** Built all three explorations as self-contained, docker-deployable
-services (TS + Hono + pglite/pgvector + Vercel AI SDK, `text-embedding-3-large` +
-Claude Opus 4.8), each to a shared spec ([`implementations/README.md`](implementations/README.md)).
-Switched the exploration model from git branches to **folders**. Added a shared,
-harder benchmark ([`bench/scenarios/comparison.json`](bench/scenarios/comparison.json)),
-an **LLM-judged comparison harness** ([`bench/report.ts`](bench/report.ts)), and a
-one-command orchestrator ([`scripts/run-comparison.sh`](scripts/run-comparison.sh))
-that boots all four on distinct ports, runs the report, and tears down. Removed the
-assignment brief from version control (kept locally, gitignored). Isolated the
-sub-projects from root tooling (biome/vitest/docker scope to the baseline only).
+**What changed:** Replaced "new value always supersedes old" with a 5-way
+reconciliation decision: `ADD | UPDATE | REINFORCE | CONTRADICT | NOOP`, and added
+a `memory_links` table with two-way `contradiction` edges. Recall now always
+follows those links (full chain) and the LLM narrates the tension.
 
-**Why:** the per-implementation fixtures weren't comparable (different sizes/probes,
-all easy). A real comparison needs **one** harder fixture run identically against
-all four over the same HTTP contract, scored by an LLM judge — mirroring how the
-assignment's private eval works — across the categories that actually separate
-designs (paraphrase, fact evolution, opinion arc, multi-hop, abstention, budget).
+**Why:** A pure supersession model throws away the most interesting signal — that
+the user *changed their mind*. "Liked oranges → prefers apples" should read as a
+reversal in recall, not silently drop the old preference. Neutral progression of
+a single-valued fact (moved cities) still uses plain `UPDATE`/supersede; reversals
+of preferences/opinions use `CONTRADICT` and keep both rows active.
 
-**Result** (full report: [`docs/COMPARISON.md`](docs/COMPARISON.md)):
-- **Formal requirements:** all four pass every §3/§5/§6 check (endpoints, shapes,
-  status codes, persistence, structured memories, docker/compose, docs).
-- **Benchmark** (12 probes, Claude Opus 4.8 judge):
+**Result:** This became the headline opinion of the submission. `/users/:id/
+memories` exposes the link graph as a `contradicts[]` array per memory; recall
+pulls the partner even when the query only matches one side (covered by a test).
 
-  | impl | judge pass | avg recall ms | avg ingest ms |
-  |---|---|---|---|
-  | baseline | 4/12 (33%) | 5 | 1 |
-  | opinionated | 11/12 (92%) | 3823 | 9865 |
-  | simple | 11/12 (92%) | 491 | 4137 |
-  | maxxed | 12/12 (100%) | 5251 | 4149 |
-
-- **Findings:** the v0 floor is confirmed (brittle lexical extraction fails
-  paraphrase/job-phrasing/"moving"/implicit). Among the LLM builds the aggregate is
-  near-tied; the real differences are per-category and cost: **opinionated** misses
-  the multi-step opinion arc and has the costliest ingest (~10s/turn, per-fact
-  reconcile); **simple** misses noise-abstention (always-on profile, no relevance
-  gate) but has the fastest recall (~0.5s); **maxxed** is the only clean sweep but
-  the costliest recall (LLM rerank+compaction in the hot path). All three context
-  budgets stay tight (~32–43 tokens). All three independently hit the same provider
-  quirk (`claude-opus-4-8` rejects `temperature`; `ANTHROPIC_BASE_URL` needs `/v1`).
-
-**Next (analysis only — not yet implemented):** scale the benchmark with a real
-dataset (LongMemEval / LoCoMo) so 92% vs 100% is statistically meaningful; tighten
-the abstention rubric (judge leniency observed); then per-build fixes — opinionated:
-opinion-arc synthesis + cheaper ingest; simple: an abstention/relevance gate;
-maxxed: trim recall latency + n-hop. No promotion decision yet.
+**Tradeoff noted:** more active rows, and the reconciler must tolerate the
+occasional duplicate — accepted for the recall-narration payoff.
 
 ---
 
-## v0.1 — Port the control to TypeScript
+## v2 — Synchronous, per-fact, parallel reconciliation
 
-**What changed:** Rewrote the v0 control from Python/FastAPI to **TypeScript +
-Hono + better-sqlite3**, keeping behaviour identical. Toolchain moved to the Node
-ecosystem: **Biome** (lint+format), **Vitest** (tests), **tsx** (run TS directly,
-no build step), **Zod** (request validation). Benchmark harness and the
-requirements guardrail were ported to TS; smoke test (curl) is unchanged.
+**What changed:** Made `POST /turns` fully synchronous with the
+extract → (per-fact: embed + semantic-search + reconcile) → apply pipeline. The
+heavy LLM/embedding work fans out with `Promise.all`; cheap writes apply serially
+to avoid two facts in one turn racing on the same slot. Raw turn is persisted
+*first*, before extraction, so a citable record always survives.
 
-**Why:** the three exploration implementations use the Vercel AI SDK and pglite,
-both first-class in the TS/JS ecosystem (pglite is natively a WASM/JS package).
-Putting the control on the same toolchain means one language, one set of
-guardrails, and an apples-to-apples comparison where only the *design* differs.
+**Why:** The brief gives `/turns` a 60 s budget and says not to waste effort on
+async orchestration. Doing all the work up front makes the contract's hardest
+guarantee — immediate queryability, no eventual-consistency gap — true by
+construction, and removes a whole class of race conditions. Per-fact (rather than
+whole-turn) reconciliation lets each fact see only its real semantic neighbours,
+which makes the LLM's ADD/UPDATE/CONTRADICT decision far more reliable.
 
-**Result:** behaviour preserved — self-eval fixture **7/7 probes (100%)**, full
-Vitest suite green (contract, persistence, cross-session scoping, robustness,
-fact-evolution), container boots via `docker compose up` on :8080, data survives
-`docker compose down && up`. CI is Node-based (biome → typecheck → requirements →
-vitest → docker smoke → restart-persistence → bench).
-
-**Next:** branch the three explorations onto the shared pglite + Vercel AI SDK +
-Opus stack and benchmark them against this control.
+**Result:** Reads-after-writes are correct with zero extra machinery; restart
+persistence works because pglite commits are awaited before `201`.
 
 ---
 
-## v0 — Baseline / control: full contract, offline, deterministic
+## v1 — Store, contract, and the LLM seam
 
-**What changed:** First end-to-end slice and the control for the comparison above.
-All seven contract endpoints over an embedded SQLite database (single file on a
-Docker volume). Rule-based extraction of typed memories (employment, location/moves,
-pets incl. implicit, diet, allergies, preferences, names, family). Keyword-overlap +
-recency + type-priority recall with budget-bounded assembly. Fact-evolution via
-key-based supersession (old row kept, `supersedes` chain, current value returned).
-Pluggable Extractor/Recaller behind env-selected factories.
+**What changed:** Stood up the Hono app implementing the seven contract
+endpoints with shapes identical to the root baseline, on pglite + the `vector`
+extension (relational facts, raw turns, embeddings, link graph in one embedded
+Postgres on a Docker volume). Defined the single injectable `LLMProvider` seam
+(live = Vercel AI SDK; mock = offline) and the Zod schemas for every structured
+decision.
 
-**Why this shape first:** the spec rewards iteration with metrics over a single
-clever shot. A deterministic, offline baseline makes the self-eval loop and CI
-instant and reproducible (no network, no flakiness), and gives every branch a
-measurable floor to beat. It is intentionally the no-embeddings, no-LLM control.
+**Why:** Contract parity first, and an injectable model layer so everything can
+be tested offline. pglite chosen for real durability with zero external services
+and one consistency model across rows, vectors, and the link graph (vs. an
+external vector DB or a graph engine, both unjustified at this scope).
 
-**Result:** self-eval fixture **7/7 probes (100%)**; verified in the real container
-(`docker compose up` on :8080, data survives a restart, bench 7/7). Guardrails:
-`scripts/check-requirements.*`, pre-commit (lint+format, secret detection, the
-requirements check), and GitHub Actions CI.
-
-> Note: v0 was originally prototyped in Python/FastAPI; v0.1 ported it to
-> TypeScript. The design and behaviour are unchanged.
+**Result:** Health/roundtrip/persistence working end to end against the mock;
+foundation for v2–v5.
