@@ -9,8 +9,6 @@ phase**. Recall then uses the LLM as a reranker and compaction agent, and
 **always follows contradiction links** so a follow-up can be told "you used to
 prefer oranges, but now you prefer apples."
 
-Implements the full HTTP contract in [`ASSIGNMENT.md`](ASSIGNMENT.md)
-§3 with shapes identical to the baseline build (`implementations/baseline`).
 Stack: TypeScript + Node 22 +
 Hono, [pglite](https://github.com/electric-sql/pglite) (embedded Postgres) with
 the `vector` extension, and the Vercel AI SDK (Anthropic Claude — Haiku 4.5 by
@@ -22,39 +20,39 @@ default, Opus 4.8 as an override — for all structured decisions, OpenAI
 ## 1. Architecture
 
 ```
-                          POST /turns  (SYNCHRONOUS — nothing deferred)
+                          POST /turns   (SYNCHRONOUS — nothing deferred)
                                  │
-   ┌─────────────────────────────┼──────────────────────────────────────┐
-   │ 1. persist RAW turn verbatim  ──────────────►  turns table          │
-   │      (source of truth, citable)                                     │
-   │                                                                     │
-   │ 2. EXTRACT context-enriched facts          generateObject + Zod     │
-   │      "User's dog is named Biscuit"          (Claude Haiku 4.5)      │
-   │                                                                     │
-   │ 3. per fact, IN PARALLEL:                                           │
-   │      a. embed (text-embedding-3-large)                              │
-   │      b. semantic search store for similar facts   (pgvector cosine) │
-   │      c. RECONCILE: LLM returns ops               generateObject     │
-   │         ADD | UPDATE | REINFORCE | CONTRADICT | NOOP                │
-   │      d. apply ops                                                   │
-   │                                                                     │
-   │ 4. contradictions are LINKED (two-way), never deleted               │
-   └─────────────────────────────┬──────────────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────────────────
+   │ Stage 1 — persist RAW turn verbatim ─────────────►  turns table
+   │           (source of truth, citable)
+   │
+   │ Stage 2 — EXTRACT context-enriched facts        generateObject + Zod
+   │           "User's dog is named Biscuit"         (Claude Haiku 4.5)
+   │
+   │ Stage 3 — per fact, IN PARALLEL  (the differentiator):
+   │             a. embed                             text-embedding-3-large
+   │             b. semantic-search for similar facts (pgvector cosine)
+   │             c. RECONCILE: LLM returns an op      generateObject
+   │                ADD | UPDATE | REINFORCE | CONTRADICT | NOOP
+   │             d. apply the op
+   │
+   │ Stage 4 — contradictions are LINKED (two-way), never deleted
+   └──────────────────────────────────────────────────────────────────────
                                  │  memories table  +  memory_links graph
                                  ▼
                           POST /recall
-   ┌─────────────────────────────┼──────────────────────────────────────┐
-   │ gather candidates:                                                  │
-   │   • semantic neighbours of the query (active memories)              │
-   │   • ALL stable active facts          (enables multi-hop)            │
-   │   • ALWAYS follow contradiction links (full chain)                  │
-   │   • recent raw-turn snippets         (episodic context)             │
-   │                                                                     │
-   │ LLM RERANK + COMPACT into budgeted prose; selects what it cited     │
-   │   (may request the whole session's facts to broaden)                │
-   │                                                                     │
-   │ map selections → citations against the RAW turns                    │
-   └─────────────────────────────────────────────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────────────────
+   │ gather candidates:
+   │   • semantic neighbours of the query (active memories)
+   │   • ALL stable active facts          (enables multi-hop)
+   │   • ALWAYS follow contradiction links (full chain)
+   │   • recent raw-turn snippets         (episodic context)
+   │
+   │ LLM RERANK + COMPACT into budgeted prose; selects what it cited
+   │   (may request the whole session's facts to broaden)
+   │
+   │ map selections → citations against the RAW turns
+   └──────────────────────────────────────────────────────────────────────
 ```
 
 Everything is a single embedded process. The Hono app
@@ -150,8 +148,9 @@ turn, then **semantic-dedup** the candidates on the embeddings we already comput
 This was the single biggest recall lever in our LoCoMo campaign (57→67); it is a
 no-op on ordinary short turns, so it adds no latency to the common case.
 
-Extraction is only stage 2. The differentiator is **stage 3: per-fact
-reconciliation.** We do **not** write enriched facts directly. For each fact, in
+Extraction (Stage 2 of the `POST /turns` pipeline in the §1 diagram) is only half
+the story. The differentiator is **Stage 3: per-fact reconciliation.** We do
+**not** write enriched facts directly. For each fact, in
 parallel, we embed it, semantic-search the store for similar existing facts, and
 ask the LLM (again `generateObject`) for a structured list of operations given
 the new fact and its neighbours: `ADD`, `UPDATE`, `REINFORCE`, `CONTRADICT`, or
