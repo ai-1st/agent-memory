@@ -79,6 +79,28 @@ def _patch_anthropic_top_p(memory) -> None:
 
 _patch_anthropic_top_p(mem)
 
+
+def _patch_faiss_fetch_width(memory) -> None:
+    """mem0's reconcile UPDATE/DELETE churns vectors, but FAISS-flat keeps the old
+    ones; the provider then fetches only `limit*2` nearest and filters by user_id,
+    so post-ingestion search returns ~2 results regardless of limit. Widen the
+    fetch so the user-id filter has the whole index to rank — restoring mem0's
+    intended top-k. Backend plumbing only; mem0's pipeline is untouched."""
+    vs = getattr(memory, "vector_store", None)
+    if vs is None or not hasattr(vs, "search"):
+        return
+    original = vs.search
+
+    def search(query, vectors, limit=5, filters=None):
+        big = max(int(limit), 256)  # fetch widely, then trim to the real limit
+        res = original(query, vectors, limit=big, filters=filters)
+        return res[:limit]
+
+    vs.search = search
+
+
+_patch_faiss_fetch_width(mem)
+
 # FAISS + mem0's in-place index isn't safe under concurrent writes; the bench
 # ingests multiple users concurrently. Serialize all memory ops with one lock —
 # correctness over throughput for a baseline.
