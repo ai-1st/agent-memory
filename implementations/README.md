@@ -20,7 +20,7 @@
 
 ## Shared contract (all folders must satisfy)
 
-- Implement the **exact HTTP contract** in [`../ASSIGNMENT.md`](../ASSIGNMENT.md) §3:
+- Implement the **exact HTTP contract**:
   `GET /health`, `POST /turns`, `POST /recall`, `POST /search`,
   `GET /users/:user_id/memories`, `DELETE /sessions/:session_id`,
   `DELETE /users/:user_id`. Same request/response shapes and status codes as the
@@ -67,7 +67,6 @@
 
 ## References
 
-- Full assignment: [`../ASSIGNMENT.md`](../ASSIGNMENT.md)
 - Reference implementation / deliverable (shapes, store seam, recall assembly): repo root `src/` (the `opinionated` build)
 - Memory-system ADRs & technique shortlist: [`../research/approaches`](../research/approaches)
 - Benchmark survey & recommendations: [`../research/benchmarks`](../research/benchmarks)
