@@ -19,7 +19,7 @@ default, Opus 4.8 as an override — for all structured decisions, OpenAI
 **LoCoMo** (long, multi-session conversations) — this build scores **76%**, up
 from 27% before the recall campaign (see the [CHANGELOG](CHANGELOG.md)); the
 no-LLM control manages 15%. It also scores **100%** on the custom fixture,
-**87%** on LongMemEval, and **80%** on both adversarial noise-resistance and
+**78%** on LongMemEval, and **80%** on both adversarial noise-resistance and
 RULER needle-in-haystack. Measured against an off-the-shelf **mem0 + Chroma**
 baseline on the *same* model and judge, it ties or beats on most categories and
 **more than doubles it on LoCoMo (76% vs 30%)** — the payoff of the

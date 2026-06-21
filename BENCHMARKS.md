@@ -48,7 +48,7 @@ We scanned every service + run log for rate limits and errors:
 | Benchmark | baseline | simple | maxxed | opinionated | mem0-chroma¹ |
 |---|---|---|---|---|---|
 | custom | 33% (12) | 100% (12) | 92% (12) | 100% (12) | 100% (12) |
-| longmemeval | 37% (100) | **93% (15)** | 73% (15) | 87% (15) | 83% (40)² |
+| longmemeval | 37% (100) | 75% (40) | 70% (40) | **78% (40)** | **83% (40)** |
 | ruler-niah | 100% (60) | **100% (30)** | 80% (30) | 80% (30) | 97% (30) |
 | locomo (pre-campaign) | 15% (100) | 24% (100) | 26% (100) | 27% (100) | — |
 | **locomo (after improvement campaign)** | 15% (100) | **50% (100)** | **30% (100)** | **76% (100)** | 30% (100) |
@@ -57,8 +57,8 @@ We scanned every service + run log for rate limits and errors:
 ¹ **mem0-chroma** is an *external reference baseline* — vanilla [mem0](https://github.com/mem0ai/mem0)
 + Chroma, same Haiku model / embeddings / judge — not one of our designs (see the
 dedicated section below for why its numbers needed a fix before they were valid).
-² mem0-chroma ran longmemeval at N=40; our builds at N=15 (same first-N slice, all
-temporal-reasoning questions).
+The longmemeval N=40 slice is the first 40 oracle instances — all
+temporal-reasoning questions, so it reads as a pure temporal benchmark.
 
 The **LoCoMo improvement campaign** (date-anchoring → coverage/selection → per-build
 iterations) is detailed in the next section; it roughly doubled–tripled every LLM
@@ -69,8 +69,10 @@ Notes:
   LongMemEval 37%) — the whole argument for the LLM builds. It "wins" `ruler-niah`
   because exact-token needle retrieval is trivial for keyword match; discrimination
   there is at larger haystack depth.
-- **`simple` leads or ties everywhere.** It is never the worst LLM build on any
-  benchmark.
+- **`simple` is the cheapest LLM build and stays competitive** — top-tier on the
+  saturated sets (custom 100, RULER 100) and mid-pack elsewhere; `opinionated`
+  edges it on the harder reasoning sets (LongMemEval 78 vs 75, adversarial 80 vs
+  63, LoCoMo 76 vs 50).
 
 ## Axis 2 — Cost (USD per run, model-aware)
 
@@ -171,7 +173,7 @@ gap reflects the *memory pipeline*, not the model. Build: [`implementations/mem0
 | contradiction | **100%** | 100% (simple/maxxed) | ties the top |
 | adversarial | **80%** | 80% (opinionated) | ties our best |
 | ruler-niah | **97%** | 100% baseline / 80% LLM | beats our LLM builds |
-| longmemeval | **83%** (N=40) | 93% (simple) | mid-pack |
+| longmemeval | **83%** | 78% (opinionated) | edges our best |
 | locomo | **30%** | **76% (opinionated)** | **our build wins by +46** |
 
 **Vanilla mem0 + Chroma is a genuinely strong baseline** — it ties or beats our
@@ -249,9 +251,9 @@ After the LoCoMo campaign and the external-baseline comparison:
   link-graph earns its 3–8× cost on multi-hop / temporal / contradiction
   reasoning. Its one backfire is `slot_collision` (keep-both is wrong for a plain
   correction).
-- **`simple` is the cost/latency sweet spot** — it ties or leads on the saturated
-  sets (custom 100, LongMemEval 93, RULER 100) at ~1/7 the cost, and is never the
-  worst LLM build on any benchmark.
+- **`simple` is the cost/latency sweet spot** — top-tier on the saturated sets
+  (custom 100, RULER 100) at ~1/7 the cost, and competitive elsewhere (it trails
+  `opinionated` on the harder reasoning sets).
 - **`maxxed` is the middle** — broad coverage, but its staged rerank→compact
   pipeline floods under the coverage lever (the documented −11 on LoCoMo).
 - **vs off-the-shelf mem0 + Chroma** (same model + judge): we tie or beat it on
