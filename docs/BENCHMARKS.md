@@ -198,6 +198,43 @@ stretch, on a Haiku-class model and a job-challenge-scope codebase. simple (50%)
 maxxed (30%) are capped by their contracts ("stay simple" / staged pipeline that
 floods under coverage), which is itself the documented finding.
 
+## External baseline — vanilla mem0 + FAISS (stack-rank)
+
+We stood up [`implementations/mem0-faiss`](../implementations/mem0-faiss) — the
+off-the-shelf [`mem0`](https://github.com/mem0ai/mem0) pipeline behind FAISS — and
+ran it on the **same** LoCoMo adapter + Opus judge, with the **same model**
+(Haiku 4.5) and embeddings (`text-embedding-3-large`) as our builds, so the delta
+is the *pipeline*, not the model.
+
+| build | LoCoMo (Haiku, N=100) |
+|---|---|
+| **opinionated** | **76%** |
+| simple | 50% |
+| maxxed | 30% |
+| baseline (no LLM) | 15% |
+| **mem0 + FAISS (vanilla)** | **0%** (temporal 0/37, recall 0/31, multihop 0/32) |
+
+**This is not a broken integration — and it deserves careful framing.** We gave
+mem0 a fair shot: three *backend* fixes, none touching its memory pipeline/prompts
+— strip `top_p` (Claude 4.x compat), switch FAISS from its broken euclidean default
+to **cosine**, and **widen the fetch** (mem0's reconcile churn leaves dead vectors
+in FAISS-flat, so the default `limit*2` fetch returned ~2 live results). After those,
+recall returns substantive, query-specific context (66 tok/recall). It still scores
+~0% **on our strict harness** because:
+- **No date-anchoring** → every temporal probe fails (mem0 never stores the date:
+  "attended the support group" with no *when*). That's 37% of probes, dead.
+- **Terse, lossy extraction** → mem0 compresses "wants to work in counseling/psych"
+  down to "is continuing her education", dropping the very detail the probe asks —
+  so even single-hop recall is 0/31.
+- **No multi-hop chaining** → isolated facts, never connected.
+
+**Important caveat:** mem0's *own* published LoCoMo (~66%) uses mem0's own eval
+harness/judge (and often its graph variant), not our strict Opus judge that requires
+the exact answer to be present in the returned context. So this 0% is "vanilla mem0
+on *our* yardstick", not a claim that mem0 is a 0% system. The point of the
+comparison stands either way: **the gaps that sink it here — date-anchoring, detail-
+preserving extraction, coverage — are exactly what our campaign added to climb 15→76.**
+
 ## Reading — UPDATED after the discriminating runs (N=40, LoCoMo on LLM builds, adversarial)
 
 > An earlier version of this section concluded "`simple` is the standout /

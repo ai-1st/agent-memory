@@ -55,10 +55,19 @@ npx tsx bench/suite/run.ts --adapter locomo --url http://localhost:8095 --label 
 
 ## Result (LoCoMo, Haiku, N=100, Opus judge)
 
-_Populated by the bench run — see the comparison in the root
-[`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md)._ The headline is the stack-rank
-against our builds; a vanilla off-the-shelf pipeline is exactly the baseline our
-date-anchoring + coverage + selection work was meant to beat.
+**0%** (temporal 0/37, recall 0/31, multihop 0/32) — vs our builds **opinionated 76 /
+simple 50 / maxxed 30** and the no-LLM **baseline 15** on the *same* harness. Full
+framing + the stack-rank table in [`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md).
+
+This is a *fair* number, not a broken integration — retrieval was fixed (cosine +
+fetch-width; see below) so recall returns substantive query-specific context (~66
+tok/recall). It still scores ~0% on **our strict judge** because vanilla mem0 stores
+**terse, date-less** facts ("attended the support group" with no *when*; "continuing
+her education" instead of "wants to work in counseling") that don't contain the
+specific answer the probe needs. **Caveat:** mem0's own published LoCoMo (~66%) uses
+mem0's own eval harness, not our exact-answer Opus judge — so this is "vanilla mem0
+on our yardstick", and the takeaway is that date-anchoring + detail-preserving
+extraction + coverage (what our builds add) are exactly what move the number.
 
 ## Known limitations (by design — it's a baseline)
 
