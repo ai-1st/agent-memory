@@ -58,7 +58,7 @@ bash scripts/run-comparison.sh   # boots all four, runs bench/report.ts, tears d
 
 It writes the raw `bench/results/REPORT.md` + `report.json` (git-ignored); the
 curated snapshot with the written analysis is committed at
-[`../docs/COMPARISON.md`](../docs/COMPARISON.md). `bench/report.ts` can also be run
+[`../BENCHMARKS.md`](../BENCHMARKS.md). `bench/report.ts` can also be run
 standalone against already-running services (see its header).
 
 ## Benchmark suite (`bench/suite/`)

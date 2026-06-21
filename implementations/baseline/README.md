@@ -176,5 +176,5 @@ npm run bench -- --label baseline
 npm run bench -- --compare
 ```
 
-See [bench/README.md](bench/README.md) for the benchmark harness, and
-[docs/research/](docs/research) for the memory-system ADRs and benchmark survey.
+See [bench/README.md](../../bench/README.md) for the benchmark harness, and
+[research/](../../research) for the memory-system ADRs and benchmark survey.

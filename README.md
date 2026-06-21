@@ -15,6 +15,18 @@ the `vector` extension, and the Vercel AI SDK (Anthropic Claude — Haiku 4.5 by
 default, Opus 4.8 as an override — for all structured decisions, OpenAI
 `text-embedding-3-large` for embeddings).
 
+**Results (Haiku 4.5, judged by Claude Opus 4.8).** On the hardest benchmark —
+**LoCoMo** (long, multi-session conversations) — this build scores **76%**, up
+from 27% before the recall campaign (see the [CHANGELOG](CHANGELOG.md)); the
+no-LLM control manages 15%. It also scores **100%** on the custom fixture,
+**87%** on LongMemEval, and **80%** on both adversarial noise-resistance and
+RULER needle-in-haystack. Measured against an off-the-shelf **mem0 + Chroma**
+baseline on the *same* model and judge, it ties or beats on most categories and
+**more than doubles it on LoCoMo (76% vs 30%)** — the payoff of the
+date-anchoring + chunked-extraction work in the CHANGELOG. Full per-axis tables
+(accuracy / cost / tokens / latency), the cross-build stack-rank, and the
+methodology are in **[BENCHMARKS.md](BENCHMARKS.md)**.
+
 ---
 
 ## 1. Architecture

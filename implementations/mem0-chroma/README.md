@@ -64,7 +64,7 @@ npx tsx bench/suite/run.ts --adapter locomo --url http://localhost:8095 --label 
 ## Results
 
 _Populated by the suite run — full stack-rank vs our builds in the root
-[`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md)._
+[`BENCHMARKS.md`](../../BENCHMARKS.md)._
 
 ## Known limitations (by design — it's a baseline)
 

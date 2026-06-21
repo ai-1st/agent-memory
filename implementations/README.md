@@ -5,7 +5,7 @@
 > **supporting builds** kept for the benchmark comparison — they are *not* the
 > submission. Each is a self-contained, docker-deployable service on the same
 > contract, scored by the HTTP harness in [`../bench`](../bench). See the
-> cross-build stack-rank in [`../docs/BENCHMARKS.md`](../docs/BENCHMARKS.md).
+> cross-build stack-rank in [`../BENCHMARKS.md`](../BENCHMARKS.md).
 
 | Folder | Role | Design | Dev/bench port |
 |--------|------|--------|----------------|
@@ -69,5 +69,5 @@
 
 - Full assignment: [`../ASSIGNMENT.md`](../ASSIGNMENT.md)
 - Reference implementation / deliverable (shapes, store seam, recall assembly): repo root `src/` (the `opinionated` build)
-- Memory-system ADRs & technique shortlist: [`../docs/research/approaches`](../docs/research/approaches)
-- Benchmark survey & recommendations: [`../docs/research/benchmarks`](../docs/research/benchmarks)
+- Memory-system ADRs & technique shortlist: [`../research/approaches`](../research/approaches)
+- Benchmark survey & recommendations: [`../research/benchmarks`](../research/benchmarks)

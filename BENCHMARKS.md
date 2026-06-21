@@ -1,6 +1,6 @@
 # Benchmark suite results
 
-Generated from the benchmark suite ([`bench/suite/`](../bench/suite)) — four
+Generated from the benchmark suite ([`bench/suite/`](bench/suite)) — four
 public/standard benchmarks plus one purpose-built fixture, all normalized to one
 HTTP contract and scored by an **LLM judge** (Claude Opus 4.8) on the **mem0
 three-axis card**: accuracy-by-category / tokens-per-recall / p50–p95 latency,
@@ -122,7 +122,7 @@ with bigger context blocks — relevant if the downstream prompt budget is tight
 `opinionated`'s headline design bet is that contradictions should be **linked, not
 superseded**: keep both sides active, follow the link in recall, and narrate the
 tension *and the reason* ("previously liked oranges, now apples — too acidic"). The
-[`contradiction`](../bench/suite/adapters/contradiction.ts) fixture was built
+[`contradiction`](bench/suite/adapters/contradiction.ts) fixture was built
 specifically to reward that — 5 scenarios that force same-slot conflicts (relocation,
 favorite language, diet, an opinion arc, job satisfaction), each with two probes: a
 `contradiction_tension` probe (does recall surface *both* sides + the unresolved
@@ -163,7 +163,7 @@ To stack-rank our designs against an off-the-shelf system, we wrapped vanilla
 [mem0](https://github.com/mem0ai/mem0) (its own extraction + fact-reconcile
 pipeline) behind the same HTTP contract, with **Chroma** as the vector store and
 the **same Haiku model, embeddings, and Opus judge** our builds use. So a score
-gap reflects the *memory pipeline*, not the model. Build: [`implementations/mem0-chroma`](../implementations/mem0-chroma).
+gap reflects the *memory pipeline*, not the model. Build: [`implementations/mem0-chroma`](implementations/mem0-chroma).
 
 | Benchmark | mem0-chroma | best of our builds | verdict |
 |---|---|---|---|

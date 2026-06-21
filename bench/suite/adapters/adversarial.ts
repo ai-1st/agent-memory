@@ -4,7 +4,7 @@
  *
  * WHY THIS EXISTS
  * ---------------
- * The probe-discrimination audit (docs/research/probe-discrimination-audit.md)
+ * The probe-discrimination audit (research/probe-discrimination-audit.md)
  * found the standard suite near-saturated: the bulk of probes are easy single-
  * fact lookups any embedding store nails, so the good builds all read ~100% and
  * the headline can't rank them. Only a few cells (longmemeval temporal, ruler
