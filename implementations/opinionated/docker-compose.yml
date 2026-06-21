@@ -13,7 +13,16 @@ services:
       MEMORY_DATA_DIR: /data/pg
       # "live" uses real Anthropic + OpenAI. The eval harness supplies the keys.
       MEMORY_LLM: ${MEMORY_LLM:-live}
-      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-claude-opus-4-8}
+      # Default Haiku 4.5: measured 76% on LoCoMo (our hardest benchmark) with the
+      # full pipeline, ~1/15 the cost of Opus, and comfortably inside the 60s
+      # /turns budget even when chunked extraction fires on dense turns. Override
+      # with MEMORY_LLM_MODEL=claude-opus-4-8 for maximum quality (slower).
+      MEMORY_LLM_MODEL: ${MEMORY_LLM_MODEL:-claude-haiku-4-5-20251001}
+      # Chunked extraction (extract per focused message-window + whole turn): the
+      # single biggest recall lever (LoCoMo 57→67). On by default; set 0 to disable.
+      MEMORY_CHUNK_EXTRACT: ${MEMORY_CHUNK_EXTRACT:-1}
+      # Multi-query retrieval: experimental, measured to not help on LoCoMo. Off.
+      MEMORY_MULTI_QUERY: ${MEMORY_MULTI_QUERY:-0}
       MEMORY_AUTH_TOKEN: ${MEMORY_AUTH_TOKEN:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

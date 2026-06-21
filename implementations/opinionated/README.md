@@ -12,8 +12,9 @@ prefer oranges, but now you prefer apples."
 Implements the full HTTP contract in [`../../ASSIGNMENT.md`](../../ASSIGNMENT.md)
 §3 with shapes identical to the root baseline. Stack: TypeScript + Node 22 +
 Hono, [pglite](https://github.com/electric-sql/pglite) (embedded Postgres) with
-the `vector` extension, and the Vercel AI SDK (Claude Opus 4.8 for all
-structured decisions, OpenAI `text-embedding-3-large` for embeddings).
+the `vector` extension, and the Vercel AI SDK (Anthropic Claude — Haiku 4.5 by
+default, Opus 4.8 as an override — for all structured decisions, OpenAI
+`text-embedding-3-large` for embeddings).
 
 ---
 
@@ -27,7 +28,7 @@ structured decisions, OpenAI `text-embedding-3-large` for embeddings).
    │      (source of truth, citable)                                     │
    │                                                                     │
    │ 2. EXTRACT context-enriched facts          generateObject + Zod     │
-   │      "User's dog is named Biscuit"          (Claude Opus 4.8)       │
+   │      "User's dog is named Biscuit"          (Claude Haiku 4.5)      │
    │                                                                     │
    │ 3. per fact, IN PARALLEL:                                           │
    │      a. embed (text-embedding-3-large)                              │
@@ -117,13 +118,28 @@ calls out are all covered: employment, location/moves, pets (incl. **implicit**,
 preferences, and opinions.
 
 **How.** `generateObject` + a Zod schema
-([`src/pipeline/schemas.ts`](src/pipeline/schemas.ts)) with Claude Opus 4.8. The
-extraction prompt's defining rule is **context-enrichment**: every fact must be
-self-contained with no dangling pronouns or references — `"User's dog is named
-Biscuit"`, never `"it's named Biscuit"`. This is what makes facts survive being
-pulled out of their conversation and dropped into a recall block weeks later, and
-it is what makes semantic dedup work (two phrasings of the same fact embed close
-together).
+([`src/pipeline/schemas.ts`](src/pipeline/schemas.ts)) with the configured Claude
+model (**Haiku 4.5 by default** — see §8 and `.env.example`). The extraction
+prompt's defining rule is **context-enrichment**: every fact must be self-contained
+with no dangling pronouns or references — `"User's dog is named Biscuit"`, never
+`"it's named Biscuit"`. This is what makes facts survive being pulled out of their
+conversation and dropped into a recall block weeks later, and it is what makes
+semantic dedup work (two phrasings of the same fact embed close together).
+
+**Date-anchoring.** The turn timestamp flows into extraction and the model
+resolves every relative time expression to an absolute date — *"last Saturday"* →
+*"...on 2023-05-13"*, baked into the `value`. A stored fact is read by recall (and
+the downstream agent) with no access to the turn clock, so a bare relative date is
+unanswerable. This single change drove our temporal-question accuracy on LoCoMo
+from ~16% to ~46% (see CHANGELOG v7).
+
+**Chunked extraction (default on).** On long, dense turns (≥8 messages) a single
+extraction pass systematically drops one-off details. So we extract from each
+focused message-window (`MEMORY_CHUNK_EXTRACT`, on by default) **and** the whole
+turn, then **semantic-dedup** the candidates on the embeddings we already compute
+(near-identical facts under slightly different keys collapse before reconcile).
+This was the single biggest recall lever in our LoCoMo campaign (57→67); it is a
+no-op on ordinary short turns, so it adds no latency to the common case.
 
 Extraction is only stage 2. The differentiator is **stage 3: per-fact
 reconciliation.** We do **not** write enriched facts directly. For each fact, in
@@ -157,12 +173,19 @@ racing on the same slot.
 `POST /recall` ([`src/pipeline/recall.ts`](src/pipeline/recall.ts)):
 
 1. **Gather candidates.** (a) Semantic neighbours of the query over active
-   memories (pgvector). (b) **All** stable active facts — included unconditionally
+   memories (pgvector) — a deliberately **wide** pool (top-32; the LLM reranker
+   triages it, so breadth costs context tokens, not answer quality, and it was a
+   key LoCoMo lever). (b) **All** stable active facts — included unconditionally
    so multi-hop questions work (e.g. *"what city does the user with the dog named
    Biscuit live in?"* needs the location fact even though "city/live" doesn't
    lexically hit it). (c) **Always follow contradiction links** from everything
    gathered, walking the full chain, so both sides of a tension are present. (d)
-   Recent raw-turn snippets for episodic context.
+   Recent raw-turn snippets for episodic context. (e) *Optional* multi-query
+   expansion (`MEMORY_MULTI_QUERY`, **off by default**): the LLM proposes
+   follow-up queries from the first-round facts and merges the hits — we built and
+   measured it, found the wide pool above already covers what it would add on
+   LoCoMo (no gain), and left it env-gated for transparency rather than deleting a
+   tested idea.
 2. **LLM rerank + compaction.** The candidates (annotated with semantic score,
    supersession history, and `[CONTRADICTS …]` markers) go to Claude, which
    reranks by genuine relevance, narrates contradictions and supersessions, and
@@ -226,6 +249,14 @@ deliberate design choice, per the contract's allowance.
 
 ## 6. Tradeoffs
 
+- **Model: Haiku 4.5 by default, Opus 4.8 on a flag.** We measured the *full*
+  pipeline (date-anchoring + chunked extraction + wide-pool rerank) end-to-end on
+  Haiku and it scored **76% on LoCoMo** — our hardest benchmark — at ~1/15 the cost
+  of Opus and comfortably inside the 60 s `/turns` budget even when chunked
+  extraction fires. Opus is a single env var (`MEMORY_LLM_MODEL=claude-opus-4-8`)
+  for maximum quality, at higher latency/cost. Defaulting to the measured,
+  latency-safe model is the responsible delivery choice; embeddings stay
+  `text-embedding-3-large` regardless.
 - **Quality over cost/latency.** Multiple LLM round-trips per turn (extraction +
   one reconciliation per fact) and per recall (rerank, optional broaden). We
   spend the 60 s `/turns` budget the brief grants. The LLM layer is injectable,
