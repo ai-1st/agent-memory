@@ -8,14 +8,9 @@ with a **cost** axis added (token spend × per-model price). Reproduce with
 `bash scripts/run-suite.sh` (full matrix) or `bash scripts/run-contradiction.sh`
 (the contradiction fixture); raw cards land in git-ignored `bench/results/suite/`.
 
-**Two model runs.** The whole suite was run twice — once on **Opus 4.8**, once on
-**Haiku 4.5** — to measure the accuracy/cost tradeoff of the cheap model. The
-chat model is a container parameter (`MEMORY_LLM_MODEL`); the cost axis prices each
-card at the model it actually ran on (`bench/suite/runner.ts → priceFor()`), so
-Haiku cards are no longer mis-priced at Opus rates. The Haiku run used **5× the
-probe count** of the Opus run (it's cheap), so Haiku accuracy is the more
-statistically reliable column even though the two columns aren't probe-for-probe
-identical.
+**Model.** All builds run on **Haiku 4.5** (the chat model is a container parameter,
+`MEMORY_LLM_MODEL`). The cost axis prices each card at the model it actually ran on
+(`bench/suite/runner.ts → priceFor()`). The LLM *judge* is Claude Opus 4.8.
 
 **Run shape (cost-bounded, parallel).** The four implementations ran as concurrent
 sequences. `baseline` (free, no LLM) ran every benchmark at full-ish N; the LLM
@@ -37,24 +32,13 @@ We scanned every service + run log for rate limits and errors:
   the post-fix re-run):
   - `opinionated`'s 3× HTTP 500 on recall (`util.inspect` throwing in a catch's
     logger) — fixed with a safe `errStr()` logger + guards. Its `ruler-niah` score
-    went **33% (bug artifact) → 100%** on Opus.
+    went **33% (bug artifact) → 100%**.
   - `maxxed`'s 5× extraction schema-mismatch → silent rule fallback — fixed with
     `z.preprocess` normalization + retry + repair.
-- **Cost was previously priced at Opus rates for every card** (a runner bug),
-  overstating Haiku ~10–15×. Now model-aware; Haiku cards re-stamped.
+- **Cost is model-aware** — each card is priced at the model it ran on
+  (`bench/suite/runner.ts → priceFor()`), not a flat rate.
 
 ## Axis 1 — Accuracy (judge pass rate, N = probes)
-
-**Opus 4.8:**
-
-| Benchmark | baseline | simple | maxxed | opinionated |
-|---|---|---|---|---|
-| custom | 33% (12) | 100% (12) | 100% (12) | 100% (12) |
-| longmemeval | 50% (20) | 100% (3) | 67% (3) | 67% (3) |
-| ruler-niah | 100% (12) | 100% (6) | 67% (6) | 100% (6) |
-| locomo | 10% (20) | — | — | — |
-
-**Haiku 4.5 (5× probes — the reliable column):**
 
 | Benchmark | baseline | simple | maxxed | opinionated |
 |---|---|---|---|---|
@@ -70,41 +54,36 @@ iterations) is detailed in the next section; it roughly doubled–tripled every 
 build on the hardest benchmark.
 
 Notes:
-- **Haiku barely costs accuracy.** Across the board it lands within a few points of
-  Opus on a 5× larger sample. `simple` is the most Haiku-robust (93% / 100% / 100%);
-  `maxxed` degrades most under Haiku (longmemeval 73%, ruler 80%) — its heavier
-  multi-step pipeline is more sensitive to the weaker model.
-- **`baseline` floor is genuinely low on realistic data** (LoCoMo 10–15%,
-  LongMemEval 37–50%) — the whole argument for the LLM builds. It "wins" `ruler-niah`
+- **`baseline` floor is genuinely low on realistic data** (LoCoMo 15%,
+  LongMemEval 37%) — the whole argument for the LLM builds. It "wins" `ruler-niah`
   because exact-token needle retrieval is trivial for keyword match; discrimination
   there is at larger haystack depth.
 - **`simple` leads or ties everywhere.** It is never the worst LLM build on any
-  benchmark, on either model.
+  benchmark.
 
 ## Axis 2 — Cost (USD per run, model-aware)
 
-Pricing ($/1M tokens): Opus 15 in / 75 out; Haiku 1 in / 5 out; embeddings 0.13.
-`baseline` uses no LLM ⇒ $0. **calls** = LLM invocations per run.
+Pricing ($/1M tokens): Haiku 1 in / 5 out; embeddings 0.13 (the Opus judge's cost is
+excluded). `baseline` uses no LLM ⇒ $0. **calls** = LLM invocations per run.
 
-| Benchmark | impl | Opus $ | Haiku $ | LLM calls (Haiku, 5× N) |
-|---|---|---|---|---|
-| custom | simple | 0.29 | **0.016** | 13 |
-| custom | maxxed | 1.01 | 0.069 | 38 |
-| custom | opinionated | 1.77 | 0.105 | 50 |
-| longmemeval | simple | 0.85 | **0.226** | 34 |
-| longmemeval | maxxed | 0.89 | 0.322 | 76 |
-| longmemeval | opinionated | 3.67 | 0.894 | **290** |
-| ruler-niah | simple | 1.47 | **0.428** | 400 |
-| ruler-niah | maxxed | 3.47 | 1.236 | 521 |
-| ruler-niah | opinionated | 7.12 | 2.557 | **1101** |
+| Benchmark | impl | Haiku $ | LLM calls |
+|---|---|---|---|
+| custom | simple | **0.016** | 13 |
+| custom | maxxed | 0.069 | 38 |
+| custom | opinionated | 0.105 | 50 |
+| longmemeval | simple | **0.226** | 34 |
+| longmemeval | maxxed | 0.322 | 76 |
+| longmemeval | opinionated | 0.894 | **290** |
+| ruler-niah | simple | **0.428** | 400 |
+| ruler-niah | maxxed | 1.236 | 521 |
+| ruler-niah | opinionated | 2.557 | **1101** |
 
 - **`opinionated`'s per-fact reconcile fan-out is the cost story.** It makes
   3–8× more LLM calls than `simple` for equal-or-lower accuracy: 290 vs 34 on
   longmemeval, 1101 vs 400 on ruler — one extract call per turn *plus* a parallel
-  reconcile call per extracted fact. On Opus that's the $3–7/run we were chasing.
-- **Haiku collapses the absolute cost** (worst card $7.12 → $2.56) but does **not**
-  change the *ranking* — opinionated is still the most expensive by the same multiple,
-  because cost here is dominated by call count, not per-token price.
+  reconcile call per extracted fact.
+- Cost is dominated by **call count**, not per-token price: opinionated is the most
+  expensive build by the same 3–8× multiple regardless of model.
 
 ## Axis 3 — Tokens per recall (context size, p50)
 
@@ -120,8 +99,8 @@ with bigger context blocks — relevant if the downstream prompt budget is tight
 
 ## Axis 4 — Latency (mean ms; p95 in the cards)
 
-- **`opinionated`** owns the costliest **ingest** (mean ~5–15 s/turn on Opus, p95 to
-  ~47 s) — the per-fact parallel reconcile. Within the 60 s `/turns` budget, but heavy.
+- **`opinionated`** owns the costliest **ingest** (the per-fact parallel reconcile) —
+  heavy, but within the 60 s `/turns` budget.
 - **`maxxed`** owns the costliest **recall** (mean ~5–10 s) — LLM rerank + compaction
   in the hot path.
 - **`simple`** is the latency sweet spot (recall ~0.4–1.5 s, ingest ~3–10 s).
@@ -217,14 +196,13 @@ floods under coverage), which is itself the documented finding.
   backfire is `slot_collision` 2/3 (keep-both is wrong for a plain correction).
 - **Shared weaknesses (all builds):** temporal arithmetic/ordering, full A→B→C
   history (the `prior[0]`-only breadcrumb), and multi-hop chaining for simple.
-- **Haiku is a viable default** — near-Opus accuracy at ~1/15 the cost; cost
-  ranking is call-count-bound, not per-token.
+- **Cost ranking is call-count-bound, not per-token** — opinionated's per-fact
+  reconcile fan-out makes it the most expensive build regardless of model.
 
 **Revised take:** no single build dominates. `simple` is the best cost/latency for
 clustered workloads; `opinionated` is the accuracy leader on hard reasoning and
 worth developing further; `maxxed` is the layer-it-on middle. Next: the
 per-implementation [improvement action plan](research/failure-analysis-and-action-plan.md).
 
-_Caveats: longmemeval N=40, ruler N=30, LoCoMo N=100, adversarial N=30 (Haiku);
-Opus standard-benchmark cells remain low-N (3–6) — ranking signal only. Cost is a
-list-price estimate excluding the Opus judge._
+_Caveats: longmemeval N=40, ruler N=30, LoCoMo N=100, adversarial N=30, custom N=12,
+contradiction N=10 (all Haiku). Cost is a list-price estimate excluding the Opus judge._
