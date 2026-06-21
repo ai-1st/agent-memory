@@ -202,17 +202,30 @@ floods under coverage), which is itself the documented finding.
 
 We stood up [`implementations/mem0-faiss`](../implementations/mem0-faiss) — the
 off-the-shelf [`mem0`](https://github.com/mem0ai/mem0) pipeline behind FAISS — and
-ran it on the **same** LoCoMo adapter + Opus judge, with the **same model**
+ran it on the **same benchmark suite** + Opus judge, with the **same model**
 (Haiku 4.5) and embeddings (`text-embedding-3-large`) as our builds, so the delta
 is the *pipeline*, not the model.
 
-| build | LoCoMo (Haiku, N=100) |
-|---|---|
-| **opinionated** | **76%** |
-| simple | 50% |
-| maxxed | 30% |
-| baseline (no LLM) | 15% |
-| **mem0 + FAISS (vanilla)** | **0%** (temporal 0/37, recall 0/31, multihop 0/32) |
+Run on **every** benchmark at the same N as our builds (accuracy %, Haiku, Opus judge):
+
+| benchmark (N) | baseline | simple | maxxed | opinionated | **mem0+FAISS** |
+|---|---|---|---|---|---|
+| custom (12) | 33 | 100 | 92 | 100 | **42** |
+| ruler-niah (30) | 100 | 100 | 80 | 80 | **37** |
+| adversarial (30) | 20 | 63 | 70 | 80 | **20** |
+| longmemeval (40) | 37 | 75 | 70 | 78 | **0** |
+| contradiction (10) | — | 100 | 100 | 90 | **0** |
+| locomo (100) | 15 | 50 | 30 | 76 | **0** |
+
+**mem0+FAISS never beats our no-LLM baseline on any benchmark, and trails every LLM
+build on all six.** The shape is consistent with the LoCoMo trace:
+- **Best on `custom` (42%)** — clean, explicit single facts ("I work at Notion") are
+  what mem0's terse extraction keeps intact.
+- **`ruler-niah` 37%** — it *summarizes away* the exact needle (a code/string), so it
+  trails even the keyword-matching baseline (100%).
+- **`adversarial` 20% = the baseline floor**; **`longmemeval`/`contradiction`/`locomo`
+  = 0%** — temporal (no date-anchoring), fact-evolution narration (it supersedes,
+  doesn't narrate), and multi-session reasoning all collapse.
 
 **This is not a broken integration — and it deserves careful framing.** We gave
 mem0 a fair shot: three *backend* fixes, none touching its memory pipeline/prompts

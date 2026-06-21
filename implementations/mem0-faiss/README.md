@@ -53,11 +53,23 @@ Bench it on LoCoMo (same adapter/judge as our builds):
 npx tsx bench/suite/run.ts --adapter locomo --url http://localhost:8095 --label mem0-faiss --limit 100
 ```
 
-## Result (LoCoMo, Haiku, N=100, Opus judge)
+## Results (Haiku, Opus judge, same N as our builds)
 
-**0%** (temporal 0/37, recall 0/31, multihop 0/32) — vs our builds **opinionated 76 /
-simple 50 / maxxed 30** and the no-LLM **baseline 15** on the *same* harness. Full
-framing + the stack-rank table in [`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md).
+Across the whole suite, mem0+FAISS **never beats our no-LLM baseline** and trails
+every LLM build (`bash run-suite.sh` reproduces it):
+
+| benchmark | mem0+FAISS | our best build |
+|---|---|---|
+| custom | **42%** | 100% |
+| ruler-niah | **37%** | 100% |
+| adversarial | **20%** | 80% |
+| longmemeval | **0%** | 78% |
+| contradiction | **0%** | 100% |
+| locomo | **0%** | 76% |
+
+Best on `custom` (clean explicit facts mem0 keeps intact); collapses on temporal /
+fact-evolution / multi-session. Full framing + the per-build table in
+[`docs/BENCHMARKS.md`](../../docs/BENCHMARKS.md).
 
 This is a *fair* number, not a broken integration — retrieval was fixed (cosine +
 fetch-width; see below) so recall returns substantive query-specific context (~66
