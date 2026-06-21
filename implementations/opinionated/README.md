@@ -126,6 +126,14 @@ with no dangling pronouns or references — `"User's dog is named Biscuit"`, nev
 conversation and dropped into a recall block weeks later, and it is what makes
 semantic dedup work (two phrasings of the same fact embed close together).
 
+> The idea of having the LLM **generate self-contained, context-enriched facts**
+> — rather than storing raw message chunks — was inspired by Anthropic's
+> [Contextual Retrieval](https://www.anthropic.com/engineering/contextual-retrieval),
+> which prepends chunk-specific explanatory context before embedding so meaning
+> isn't lost when a snippet is isolated from its source. We apply the same
+> principle at extraction time: each fact carries its own resolved context
+> (names, dates, antecedents) so it stands alone at recall.
+
 **Date-anchoring.** The turn timestamp flows into extraction and the model
 resolves every relative time expression to an absolute date — *"last Saturday"* →
 *"...on 2023-05-13"*, baked into the `value`. A stored fact is read by recall (and
@@ -279,10 +287,12 @@ deliberate design choice, per the contract's allowance.
 - **No data / cold session / noise query.** `/recall` returns
   `{"context":"","citations":[]}` (200), never an error or a hallucinated
   profile. `/users/:id/memories` returns `{"memories":[]}`.
-- **Missing API keys (live mode).** The live provider throws a clear error at
-  construction (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` required). The server
-  logs and exits rather than serving a broken pipeline. Offline tests use the
-  mock provider and need no keys.
+- **Missing API keys / no `.env` (live mode).** On startup the server checks for
+  `OPENAI_API_KEY` and `ANTHROPIC_API_KEY`; if either is missing it prints
+  **exactly which key is absent**, that it normally comes from a `.env` file, and
+  how to fix it (`cp .env.example .env`, or pass them through the Docker
+  environment), then exits cleanly with code 1 — no opaque stack trace, no
+  half-started server. Offline tests/demos need no keys (`MEMORY_LLM=mock`).
 - **LLM/network failure mid-request.** Raw turn is persisted **before**
   extraction runs, so a citable record always survives even if extraction throws
   (the error is logged; the write still returns `201`). `/recall` degrades to a
