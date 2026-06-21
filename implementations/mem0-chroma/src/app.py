@@ -184,9 +184,22 @@ def search(s: Search):
 
 @app.delete("/users/{user_id}", status_code=204)
 def del_user(user_id: str):
+    # NB: mem0's Chroma provider `delete_all(user_id=...)` wipes the WHOLE
+    # collection regardless of the user_id filter (verified: ingest 3 users, the
+    # 3rd user's pre-ingest DELETE erases the first two). The bench DELETEs each
+    # user before ingesting it, so delete_all would leave only the last user's
+    # data — collapsing every multi-user adapter to ~1/N. Scope the delete by
+    # enumerating this user's own memories (get_all DOES filter by user_id) and
+    # deleting them by id.
     try:
         with _lock:
-            mem.delete_all(user_id=user_id)
+            for it in _items(mem.get_all(user_id=user_id)):
+                mid = it.get("id")
+                if mid:
+                    try:
+                        mem.delete(memory_id=mid)
+                    except Exception:
+                        pass
     except Exception:
         pass
     return Response(status_code=204)
