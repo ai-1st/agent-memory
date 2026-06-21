@@ -22,6 +22,11 @@ signal, not a precise rate. See the
 matters and the [Reading](#reading--updated-after-the-discriminating-runs-n40-locomo-on-llm-builds-adversarial)
 section for the conclusion.
 
+**External baseline.** A fifth service — **vanilla mem0 + Chroma** on the same
+model/embeddings/judge — is scored alongside our builds as an off-the-shelf
+reference point (not part of the submission). See
+[External baseline — vanilla mem0 + Chroma](#external-baseline--vanilla-mem0--chroma).
+
 ## Validity caveats (read first)
 
 We scanned every service + run log for rate limits and errors:
@@ -40,14 +45,20 @@ We scanned every service + run log for rate limits and errors:
 
 ## Axis 1 — Accuracy (judge pass rate, N = probes)
 
-| Benchmark | baseline | simple | maxxed | opinionated |
-|---|---|---|---|---|
-| custom | 33% (12) | 100% (12) | 92% (12) | 100% (12) |
-| longmemeval | 37% (100) | **93% (15)** | 73% (15) | 87% (15) |
-| ruler-niah | 100% (60) | **100% (30)** | 80% (30) | 80% (30) |
-| locomo (pre-campaign) | 15% (100) | 24% (100) | 26% (100) | 27% (100) |
-| **locomo (after improvement campaign)** | 15% (100) | **50% (100)** | **30% (100)** | **76% (100)** |
-| adversarial | 20% (30) | 63% (30) | 70% (30) | **80% (30)** |
+| Benchmark | baseline | simple | maxxed | opinionated | mem0-chroma¹ |
+|---|---|---|---|---|---|
+| custom | 33% (12) | 100% (12) | 92% (12) | 100% (12) | 100% (12) |
+| longmemeval | 37% (100) | **93% (15)** | 73% (15) | 87% (15) | 83% (40)² |
+| ruler-niah | 100% (60) | **100% (30)** | 80% (30) | 80% (30) | 97% (30) |
+| locomo (pre-campaign) | 15% (100) | 24% (100) | 26% (100) | 27% (100) | — |
+| **locomo (after improvement campaign)** | 15% (100) | **50% (100)** | **30% (100)** | **76% (100)** | 30% (100) |
+| adversarial | 20% (30) | 63% (30) | 70% (30) | **80% (30)** | 80% (30) |
+
+¹ **mem0-chroma** is an *external reference baseline* — vanilla [mem0](https://github.com/mem0ai/mem0)
++ Chroma, same Haiku model / embeddings / judge — not one of our designs (see the
+dedicated section below for why its numbers needed a fix before they were valid).
+² mem0-chroma ran longmemeval at N=40; our builds at N=15 (same first-N slice, all
+temporal-reasoning questions).
 
 The **LoCoMo improvement campaign** (date-anchoring → coverage/selection → per-build
 iterations) is detailed in the next section; it roughly doubled–tripled every LLM
@@ -145,6 +156,57 @@ So opinionated's link-graph produces the **cleanest** contradiction narration bu
 **accuracy** edge over a smart extractor + a "previously X" breadcrumb — and it costs
 3× more. Its value, if any, is qualitative (explicit reason in the narration), not a
 measurable win on this benchmark.
+
+## External baseline — vanilla mem0 + Chroma
+
+To stack-rank our designs against an off-the-shelf system, we wrapped vanilla
+[mem0](https://github.com/mem0ai/mem0) (its own extraction + fact-reconcile
+pipeline) behind the same HTTP contract, with **Chroma** as the vector store and
+the **same Haiku model, embeddings, and Opus judge** our builds use. So a score
+gap reflects the *memory pipeline*, not the model. Build: [`implementations/mem0-chroma`](../implementations/mem0-chroma).
+
+| Benchmark | mem0-chroma | best of our builds | verdict |
+|---|---|---|---|
+| custom | **100%** | 100% (simple/opinionated) | ties the top |
+| contradiction | **100%** | 100% (simple/maxxed) | ties the top |
+| adversarial | **80%** | 80% (opinionated) | ties our best |
+| ruler-niah | **97%** | 100% baseline / 80% LLM | beats our LLM builds |
+| longmemeval | **83%** (N=40) | 93% (simple) | mid-pack |
+| locomo | **30%** | **76% (opinionated)** | **our build wins by +46** |
+
+**Vanilla mem0 + Chroma is a genuinely strong baseline** — it ties or beats our
+builds on five of six benchmarks. The one that matters most, **LoCoMo (long
+multi-session conversations), is where our `opinionated` build more than doubles
+it (76% vs 30%)** — the payoff of the date-anchoring + chunked-extraction campaign
+below, which vanilla mem0 has no equivalent of (it never sees the turn timestamp,
+so relative dates are lost). That gap is the headline argument for our design over
+off-the-shelf.
+
+### The finding that makes these numbers honest: a vector-store bug
+
+The first run scored mem0-chroma at **2.5% on longmemeval and far below baseline
+elsewhere** — implausibly bad. Tracing it surfaced a real bug in **mem0's Chroma
+provider**: `delete_all(user_id=…)` **ignores the user filter and wipes the entire
+collection**. Our harness deletes each user immediately before ingesting it (clean
+slate per scenario), so every user's pre-ingest delete erased all previously
+ingested users — leaving only the *last* user's data. That collapsed every
+multi-user benchmark to ~1/N (longmemeval's 40 users → 1 survivor → 2.5%).
+
+- **Proved it** with a 3-user repro (ingest alice→bob→carol with a delete each →
+  only carol survives), then **fixed** our wrapper to delete by enumerating the
+  user's own memory ids (`get_all(user_id)` *does* filter correctly) rather than
+  calling the collection-wiping `delete_all`.
+- Re-run after the fix: custom 50→**100**, adversarial 27→**80**, ruler 43→**97**,
+  longmemeval 2.5→**83**. (contradiction was 100 before and after — it's
+  single-user, so the bug never triggered; locomo was ~30 either way for the same
+  reason.) A second, separate issue — vanilla mem0's `add` is slow enough (17–62s
+  per session) to trip the harness's 60s ingest timeout under concurrency — was
+  handled by running it at lower concurrency.
+
+This is exactly the kind of silent off-the-shelf-component failure that argues for
+**owning the store** in our own builds (pglite/pgvector with delete semantics we
+control and test). Per the originality rule (§11), mem0-chroma is a labelled
+external reference, not part of the submission.
 
 ## LoCoMo improvement campaign (the engineering, by build)
 
