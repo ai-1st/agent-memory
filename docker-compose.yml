@@ -12,7 +12,10 @@ services:
     environment:
       MEMORY_DATA_DIR: /data/pg
       # "live" uses real Anthropic + OpenAI. The eval harness supplies the keys.
+      # "mock" runs the deterministic offline provider (no keys) — used by CI;
+      # its embeddings are 256-dim, so pair it with MEMORY_EMBED_DIM=256.
       MEMORY_LLM: ${MEMORY_LLM:-live}
+      MEMORY_EMBED_DIM: ${MEMORY_EMBED_DIM:-3072}
       # Default Haiku 4.5: measured 76% on LoCoMo (our hardest benchmark) with the
       # full pipeline, ~1/15 the cost of Opus, and comfortably inside the 60s
       # /turns budget even when chunked extraction fires on dense turns. Override

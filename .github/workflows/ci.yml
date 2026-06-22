@@ -26,16 +26,17 @@ jobs:
         run: npm test
 
   docker-smoke:
-    name: docker compose · smoke · bench
+    name: docker compose · smoke (mock LLM)
     runs-on: ubuntu-latest
+    # CI has no API keys, so run the deterministic offline mock provider. The
+    # mock's embeddings are 256-dim, so the pglite store must use vector(256).
+    # These are read by docker-compose for every `docker compose` call below.
+    env:
+      MEMORY_LLM: mock
+      MEMORY_EMBED_DIM: "256"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-      - run: npm ci
-      - name: Build & start
+      - name: Build & start (mock LLM, no keys)
         run: docker compose up -d --build
       - name: Wait for health
         run: |
@@ -44,11 +45,18 @@ jobs:
             sleep 2
           done
           echo "service did not become healthy"; docker compose logs; exit 1
-      - name: Smoke test (§7)
-        run: bash scripts/smoke.sh
-      - name: Benchmark harness
-        run: npm run bench -- --label ci
-      - name: Persistence across restart (down && up)
+      - name: Smoke (§7 contract, mock LLM)
+        run: |
+          set -e
+          curl -sf -X POST http://localhost:8080/turns -H 'Content-Type: application/json' \
+            -d '{"session_id":"smoke-1","user_id":"user-1","messages":[{"role":"user","content":"I just moved to Berlin from NYC last month."},{"role":"assistant","content":"How are you settling in?"}],"timestamp":"2025-03-15T10:30:00Z","metadata":{}}'
+          echo
+          curl -sf -X POST http://localhost:8080/recall -H 'Content-Type: application/json' \
+            -d '{"query":"Where does this user live?","session_id":"smoke-2","user_id":"user-1","max_tokens":256}' | tee /tmp/recall.json; echo
+          grep -iq berlin /tmp/recall.json || { echo "FAIL: recall did not surface Berlin"; exit 1; }
+          curl -sf http://localhost:8080/users/user-1/memories | grep -iq berlin || { echo "FAIL: no Berlin memory"; exit 1; }
+          echo "smoke OK (mock)"
+      - name: Persistence across restart (down && up, volume kept)
         run: |
           docker compose down
           docker compose up -d
